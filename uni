@@ -22,63 +22,58 @@ local killAuraConnection = nil
 local godHeartbeatConnection = nil
 local speedHeartbeatConnection = nil
 local flyConnection = nil
-local noclipConnection = nil
 local godCharacterConnection = nil
-local noclipLoopConnection = nil
-local flyNoclipConnection = nil
 
-local function forceNoclip(state)
-    noclipEnabled = state
+local noclipConnections = {}
+
+local function applyNoclipToAllParts(state)
     local currentChar = player.Character
     if not currentChar then return end
-    
     for _, part in ipairs(currentChar:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = not state
         end
     end
-    
-    if state then
-        if noclipConnection then noclipConnection:Disconnect() end
-        noclipConnection = currentChar.ChildAdded:Connect(function(child)
-            if child:IsA("BasePart") then
-                child.CanCollide = false
-            end
-        end)
-    else
-        if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
-    end
 end
 
 local function startNoclipLoop()
-    if noclipLoopConnection then noclipLoopConnection:Disconnect() end
-    noclipLoopConnection = game:GetService("RunService").Heartbeat:Connect(function()
-        if not noclipEnabled then return end
-        local currentChar = player.Character
-        if not currentChar then return end
-        for _, part in ipairs(currentChar:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
+    if noclipConnections.heartbeat then noclipConnections.heartbeat:Disconnect() end
+    if noclipConnections.renderstep then noclipConnections.renderstep:Disconnect() end
+    
+    noclipConnections.heartbeat = game:GetService("RunService").Heartbeat:Connect(function()
+        if noclipEnabled then
+            applyNoclipToAllParts(true)
+        end
+    end)
+    
+    noclipConnections.renderstep = game:GetService("RunService").RenderStepped:Connect(function()
+        if noclipEnabled then
+            applyNoclipToAllParts(true)
         end
     end)
 end
 
+local function stopNoclipLoop()
+    if noclipConnections.heartbeat then noclipConnections.heartbeat:Disconnect(); noclipConnections.heartbeat = nil end
+    if noclipConnections.renderstep then noclipConnections.renderstep:Disconnect(); noclipConnections.renderstep = nil end
+end
+
 function toggleNoclip()
     noclipEnabled = not noclipEnabled
-    forceNoclip(noclipEnabled)
     if noclipEnabled then
+        applyNoclipToAllParts(true)
         startNoclipLoop()
-    else
-        if noclipLoopConnection then noclipLoopConnection:Disconnect(); noclipLoopConnection = nil end
-        local currentChar = player.Character
-        if currentChar then
-            for _, part in ipairs(currentChar:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
+        player.CharacterAdded:Connect(function(newChar)
+            character = newChar
+            root = character:WaitForChild("HumanoidRootPart")
+            humanoid = character:WaitForChild("Humanoid")
+            if noclipEnabled then
+                applyNoclipToAllParts(true)
             end
-        end
+        end)
+    else
+        stopNoclipLoop()
+        applyNoclipToAllParts(false)
     end
 end
 
@@ -86,21 +81,10 @@ function toggleFly()
     flyEnabled = not flyEnabled
     if flyEnabled then
         if not noclipEnabled then
-            forceNoclip(true)
+            noclipEnabled = true
+            applyNoclipToAllParts(true)
             startNoclipLoop()
         end
-        
-        if flyNoclipConnection then flyNoclipConnection:Disconnect() end
-        flyNoclipConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not flyEnabled then return end
-            local currentChar = player.Character
-            if not currentChar then return end
-            for _, part in ipairs(currentChar:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
-            end
-        end)
         
         flyBodyVelocity = Instance.new("BodyVelocity")
         flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
@@ -116,6 +100,18 @@ function toggleFly()
         if flyConnection then flyConnection:Disconnect() end
         flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
             if not flyEnabled then return end
+            
+            -- ПРИНУДИТЕЛЬНЫЙ НОКЛИП КАЖДЫЙ КАДР В ПОЛЁТЕ
+            if noclipEnabled then
+                local currentChar = player.Character
+                if currentChar then
+                    for _, part in ipairs(currentChar:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end
 
             local move = Vector3.new()
             local camCFrame = camera.CFrame
@@ -159,20 +155,20 @@ function toggleFly()
                 flyGyro.Parent = root
                 humanoid.PlatformStand = true
                 if noclipEnabled then
-                    forceNoclip(true)
+                    applyNoclipToAllParts(true)
                 end
             end
         end)
     else
-        if flyNoclipConnection then flyNoclipConnection:Disconnect(); flyNoclipConnection = nil end
-        if not noclipEnabled then
-            forceNoclip(false)
-            if noclipLoopConnection then noclipLoopConnection:Disconnect(); noclipLoopConnection = nil end
-        end
         if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
         if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
         if flyGyro then flyGyro:Destroy(); flyGyro = nil end
         humanoid.PlatformStand = false
+        
+        if not noclipEnabled then
+            stopNoclipLoop()
+            applyNoclipToAllParts(false)
+        end
     end
 end
 
@@ -193,12 +189,6 @@ function toggleGod()
             humanoid.BreakJointsOnDeath = false
             
             root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-            
-            for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
         end
         
         applyGod()
@@ -223,9 +213,6 @@ function toggleGod()
             task.wait(0.1)
             if godEnabled then
                 applyGod()
-                if noclipEnabled then
-                    forceNoclip(true)
-                end
             end
         end)
         
@@ -593,4 +580,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - FULL FIXED")
+print("Ebanat Hub: Universal loaded - NOCLIP FINAL FIX")
