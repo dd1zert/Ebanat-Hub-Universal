@@ -101,7 +101,6 @@ function toggleFly()
         flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
             if not flyEnabled then return end
             
-            -- ПРИНУДИТЕЛЬНЫЙ НОКЛИП КАЖДЫЙ КАДР В ПОЛЁТЕ
             if noclipEnabled then
                 local currentChar = player.Character
                 if currentChar then
@@ -490,6 +489,7 @@ local function createToggleButton(name, label, yPos, toggleFunc, hasMenu)
     btn.BorderSizePixel = 1
     btn.BorderColor3 = Color3.fromRGB(100, 100, 150)
     btn.Parent = buttonContainer
+    
     local state = false
     
     if hasMenu then
@@ -580,4 +580,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - NOCLIP FINAL FIX")
+print("Ebanat Hub: Universal loaded - BUTTONS FIXED")
