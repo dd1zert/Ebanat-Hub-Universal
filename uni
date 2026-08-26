@@ -2,6 +2,7 @@ local player = game.Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local root = character:WaitForChild("HumanoidRootPart")
+local camera = workspace.CurrentCamera
 
 local flyEnabled = false
 local godEnabled = false
@@ -18,6 +19,7 @@ local flyGyro = nil
 local killAuraConnection = nil
 local godHeartbeatConnection = nil
 local speedHeartbeatConnection = nil
+local flyConnection = nil
 
 function toggleFly()
     flyEnabled = not flyEnabled
@@ -26,27 +28,42 @@ function toggleFly()
         flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
         flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
         flyBodyVelocity.Parent = root
+
         flyGyro = Instance.new("BodyGyro")
         flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
         flyGyro.Parent = root
+
         humanoid.PlatformStand = true
-        game:GetService("RunService").RenderStepped:Connect(function()
+
+        if flyConnection then flyConnection:Disconnect() end
+        flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
             if not flyEnabled then return end
+
             local move = Vector3.new()
-            local forward = root.CFrame.LookVector
-            local right = root.CFrame.RightVector
-            local up = root.CFrame.UpVector
+            local camCFrame = camera.CFrame
+            local forward = camCFrame.LookVector
+            local right = camCFrame.RightVector
+            local up = camCFrame.UpVector
+
             if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then move = move + forward end
             if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then move = move - forward end
             if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then move = move - right end
             if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then move = move + right end
             if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then move = move + up end
             if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
-            if move.Magnitude > 0 then move = move.Unit * FLY_SPEED end
+
+            if move.Magnitude > 0 then
+                move = move.Unit * FLY_SPEED
+            end
+
             flyBodyVelocity.Velocity = move
-            flyGyro.CFrame = root.CFrame
+
+            local lookDirection = camCFrame.LookVector
+            local targetCFrame = CFrame.new(root.Position, root.Position + lookDirection)
+            flyGyro.CFrame = targetCFrame
         end)
     else
+        if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
         if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
         if flyGyro then flyGyro:Destroy(); flyGyro = nil end
         humanoid.PlatformStand = false
@@ -289,4 +306,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - кнопки работают")
+print("Ebanat Hub: Universal loaded - FLY по направлению мыши")
