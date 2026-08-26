@@ -24,67 +24,84 @@ local speedHeartbeatConnection = nil
 local flyConnection = nil
 local noclipConnection = nil
 local godCharacterConnection = nil
-local noclipParts = {}
+local noclipLoopConnection = nil
+local flyNoclipConnection = nil
 
-local function applyNoclip(state)
+local function forceNoclip(state)
     noclipEnabled = state
-    if state then
-        noclipParts = {}
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-                table.insert(noclipParts, part)
-            end
+    local currentChar = player.Character
+    if not currentChar then return end
+    
+    for _, part in ipairs(currentChar:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = not state
         end
+    end
+    
+    if state then
         if noclipConnection then noclipConnection:Disconnect() end
-        noclipConnection = character.ChildAdded:Connect(function(child)
+        noclipConnection = currentChar.ChildAdded:Connect(function(child)
             if child:IsA("BasePart") then
                 child.CanCollide = false
-                table.insert(noclipParts, child)
             end
         end)
     else
         if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
-        for _, part in ipairs(noclipParts) do
-            if part and part.Parent then
-                part.CanCollide = true
-            end
-        end
-        noclipParts = {}
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
-            end
-        end
     end
 end
 
-local function syncNoclip()
-    if noclipEnabled then
-        for _, part in ipairs(character:GetDescendants()) do
+local function startNoclipLoop()
+    if noclipLoopConnection then noclipLoopConnection:Disconnect() end
+    noclipLoopConnection = game:GetService("RunService").Heartbeat:Connect(function()
+        if not noclipEnabled then return end
+        local currentChar = player.Character
+        if not currentChar then return end
+        for _, part in ipairs(currentChar:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
-    else
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
-            end
-        end
-    end
+    end)
 end
 
 function toggleNoclip()
-    applyNoclip(not noclipEnabled)
+    noclipEnabled = not noclipEnabled
+    forceNoclip(noclipEnabled)
+    if noclipEnabled then
+        startNoclipLoop()
+    else
+        if noclipLoopConnection then noclipLoopConnection:Disconnect(); noclipLoopConnection = nil end
+        local currentChar = player.Character
+        if currentChar then
+            for _, part in ipairs(currentChar:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
 end
 
 function toggleFly()
     flyEnabled = not flyEnabled
     if flyEnabled then
         if not noclipEnabled then
-            applyNoclip(true)
+            forceNoclip(true)
+            startNoclipLoop()
         end
+        
+        if flyNoclipConnection then flyNoclipConnection:Disconnect() end
+        flyNoclipConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not flyEnabled then return end
+            local currentChar = player.Character
+            if not currentChar then return end
+            for _, part in ipairs(currentChar:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end)
+        
         flyBodyVelocity = Instance.new("BodyVelocity")
         flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
         flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -125,11 +142,32 @@ function toggleFly()
             local targetCFrame = CFrame.new(root.Position, root.Position + lookDirection)
             flyGyro.CFrame = targetCFrame
         end)
+        
+        player.CharacterAdded:Connect(function(newChar)
+            character = newChar
+            root = character:WaitForChild("HumanoidRootPart")
+            humanoid = character:WaitForChild("Humanoid")
+            if flyEnabled then
+                if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+                if flyGyro then flyGyro:Destroy(); flyGyro = nil end
+                flyBodyVelocity = Instance.new("BodyVelocity")
+                flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                flyBodyVelocity.Parent = root
+                flyGyro = Instance.new("BodyGyro")
+                flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+                flyGyro.Parent = root
+                humanoid.PlatformStand = true
+                if noclipEnabled then
+                    forceNoclip(true)
+                end
+            end
+        end)
     else
+        if flyNoclipConnection then flyNoclipConnection:Disconnect(); flyNoclipConnection = nil end
         if not noclipEnabled then
-            applyNoclip(false)
-        else
-            syncNoclip()
+            forceNoclip(false)
+            if noclipLoopConnection then noclipLoopConnection:Disconnect(); noclipLoopConnection = nil end
         end
         if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
         if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
@@ -186,7 +224,7 @@ function toggleGod()
             if godEnabled then
                 applyGod()
                 if noclipEnabled then
-                    applyNoclip(true)
+                    forceNoclip(true)
                 end
             end
         end)
@@ -338,8 +376,8 @@ function createSpeedController()
     end
     
     speedControllerFrame = Instance.new("Frame")
-    speedControllerFrame.Size = UDim2.new(0, 200, 0, 150)
-    speedControllerFrame.Position = UDim2.new(0.5, -100, 0.5, -75)
+    speedControllerFrame.Size = UDim2.new(0, 220, 0, 160)
+    speedControllerFrame.Position = UDim2.new(0.5, -110, 0.5, -80)
     speedControllerFrame.BackgroundColor3 = Color3.fromRGB(20, 18, 40)
     speedControllerFrame.BackgroundTransparency = 0.1
     speedControllerFrame.BorderSizePixel = 2
@@ -412,9 +450,27 @@ function createSpeedController()
     speedSlider.ClearTextOnFocus = false
     speedSlider.Parent = speedControllerFrame
     
+    local defaultBtn = Instance.new("TextButton")
+    defaultBtn.Size = UDim2.new(0, 70, 0, 25)
+    defaultBtn.Position = UDim2.new(0.1, 0, 0, 125)
+    defaultBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
+    defaultBtn.Text = "Default"
+    defaultBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    defaultBtn.TextScaled = true
+    defaultBtn.Font = Enum.Font.GothamBold
+    defaultBtn.Parent = speedControllerFrame
+    defaultBtn.MouseButton1Click:Connect(function()
+        SPEED_MULTIPLIER = DEFAULT_SPEED
+        speedSlider.Text = tostring(DEFAULT_SPEED)
+        speedValueLabel.Text = "Current: " .. DEFAULT_SPEED
+        if speedEnabled then
+            humanoid.WalkSpeed = DEFAULT_SPEED
+        end
+    end)
+    
     local setBtn = Instance.new("TextButton")
     setBtn.Size = UDim2.new(0, 60, 0, 25)
-    setBtn.Position = UDim2.new(0.5, -30, 0, 120)
+    setBtn.Position = UDim2.new(0.6, 0, 0, 125)
     setBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
     setBtn.Text = "Set"
     setBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -431,24 +487,6 @@ function createSpeedController()
             end
         else
             speedSlider.Text = tostring(SPEED_MULTIPLIER)
-        end
-    end)
-    
-    local defaultBtn = Instance.new("TextButton")
-    defaultBtn.Size = UDim2.new(0, 80, 0, 25)
-    defaultBtn.Position = UDim2.new(0.5, -90, 0, 120)
-    defaultBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
-    defaultBtn.Text = "Default"
-    defaultBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    defaultBtn.TextScaled = true
-    defaultBtn.Font = Enum.Font.GothamBold
-    defaultBtn.Parent = speedControllerFrame
-    defaultBtn.MouseButton1Click:Connect(function()
-        SPEED_MULTIPLIER = DEFAULT_SPEED
-        speedSlider.Text = tostring(DEFAULT_SPEED)
-        speedValueLabel.Text = "Current: " .. DEFAULT_SPEED
-        if speedEnabled then
-            humanoid.WalkSpeed = DEFAULT_SPEED
         end
     end)
 end
@@ -555,4 +593,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - Speed regulator added")
+print("Ebanat Hub: Universal loaded - FULL FIXED")
