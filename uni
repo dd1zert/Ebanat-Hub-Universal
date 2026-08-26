@@ -9,12 +9,16 @@ local godEnabled = false
 local killAuraEnabled = false
 local speedEnabled = false
 local noclipEnabled = false
+local espEnabled = false
+local pushEnabled = false
 
 local KILL_AURA_RANGE = 20
 local KILL_AURA_DELAY = 0.3
 local SPEED_MULTIPLIER = 50
 local FLY_SPEED = 60
 local DEFAULT_SPEED = 50
+local PUSH_FORCE = 1000
+local PUSH_ROTATION_SPEED = 50
 
 local flyBodyVelocity = nil
 local flyGyro = nil
@@ -24,76 +28,10 @@ local speedHeartbeatConnection = nil
 local flyConnection = nil
 local godCharacterConnection = nil
 local noclipConnections = {}
+local espObjects = {}
+local pushConnection = nil
+local pushTarget = nil
 
--- ===== GODMODE (АГРЕССИВНЫЙ) =====
-function toggleGod()
-    godEnabled = not godEnabled
-    
-    if godEnabled then
-        if godHeartbeatConnection then godHeartbeatConnection:Disconnect() end
-        if godCharacterConnection then godCharacterConnection:Disconnect() end
-        
-        local function applyGod()
-            if not character or not character.Parent then return end
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
-            
-            humanoid.MaxHealth = 9e9
-            humanoid.Health = 9e9
-            humanoid.BreakJointsOnDeath = false
-            
-            root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-        end
-        
-        applyGod()
-        
-        -- ОСНОВНОЙ ЦИКЛ ЗАЩИТЫ (каждый кадр)
-        godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not godEnabled then return end
-            if not character or not character.Parent then return end
-            
-            if humanoid and humanoid.Parent then
-                if humanoid.Health <= 0 or humanoid.Health < 1000 then
-                    humanoid.Health = 9e9
-                end
-                if humanoid.MaxHealth < 9e8 then
-                    humanoid.MaxHealth = 9e9
-                end
-            end
-            
-            -- Защита от BreakJoints
-            if character:FindFirstChild("Humanoid") then
-                if humanoid.Health <= 0 then
-                    humanoid.Health = 9e9
-                end
-            end
-        end)
-        
-        -- ЗАЩИТА ПРИ РЕСПАВНЕ
-        godCharacterConnection = player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
-            task.wait(0.1)
-            if godEnabled then
-                applyGod()
-            end
-        end)
-        
-    else
-        if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
-        if godCharacterConnection then godCharacterConnection:Disconnect(); godCharacterConnection = nil end
-        
-        if character and character.Parent then
-            humanoid.MaxHealth = 100
-            humanoid.Health = 100
-            humanoid.BreakJointsOnDeath = true
-            root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
-        end
-    end
-end
-
--- ===== NOCLIP (АГРЕССИВНЫЙ) =====
 local function applyNoclipToAllParts(state)
     local currentChar = player.Character
     if not currentChar then return end
@@ -153,7 +91,6 @@ function toggleNoclip()
     end
 end
 
--- ===== FLY (С ПРИНУДИТЕЛЬНЫМ НОКЛИПОМ) =====
 function toggleFly()
     flyEnabled = not flyEnabled
     if flyEnabled then
@@ -248,7 +185,70 @@ function toggleFly()
     end
 end
 
--- ===== KILL AURA =====
+function toggleGod()
+    godEnabled = not godEnabled
+    
+    if godEnabled then
+        if godHeartbeatConnection then godHeartbeatConnection:Disconnect() end
+        if godCharacterConnection then godCharacterConnection:Disconnect() end
+        
+        local function applyGod()
+            if not character or not character.Parent then return end
+            humanoid = character:WaitForChild("Humanoid")
+            root = character:WaitForChild("HumanoidRootPart")
+            
+            humanoid.MaxHealth = 9e9
+            humanoid.Health = 9e9
+            humanoid.BreakJointsOnDeath = false
+            
+            root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        end
+        
+        applyGod()
+        
+        godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not godEnabled then return end
+            if not character or not character.Parent then return end
+            
+            if humanoid and humanoid.Parent then
+                if humanoid.Health <= 0 or humanoid.Health < 1000 then
+                    humanoid.Health = 9e9
+                end
+                if humanoid.MaxHealth < 9e8 then
+                    humanoid.MaxHealth = 9e9
+                end
+            end
+            
+            if character:FindFirstChild("Humanoid") then
+                if humanoid.Health <= 0 then
+                    humanoid.Health = 9e9
+                end
+            end
+        end)
+        
+        godCharacterConnection = player.CharacterAdded:Connect(function(newChar)
+            character = newChar
+            humanoid = character:WaitForChild("Humanoid")
+            root = character:WaitForChild("HumanoidRootPart")
+            task.wait(0.1)
+            if godEnabled then
+                applyGod()
+            end
+        end)
+        
+    else
+        if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
+        if godCharacterConnection then godCharacterConnection:Disconnect(); godCharacterConnection = nil end
+        
+        if character and character.Parent then
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+            humanoid.BreakJointsOnDeath = true
+            root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
+        end
+    end
+end
+
 function toggleKillAura()
     killAuraEnabled = not killAuraEnabled
     if killAuraEnabled then
@@ -288,7 +288,6 @@ function toggleKillAura()
     end
 end
 
--- ===== SPEED =====
 function toggleSpeed()
     speedEnabled = not speedEnabled
     if speedEnabled then
@@ -313,7 +312,172 @@ function toggleSpeed()
     end
 end
 
--- ===== GUI (без изменений) =====
+local function createESP()
+    if espEnabled then
+        for _, obj in pairs(espObjects) do
+            if obj then obj:Remove() end
+        end
+        espObjects = {}
+    end
+    
+    espEnabled = not espEnabled
+    
+    if not espEnabled then return end
+    
+    game:GetService("RunService").RenderStepped:Connect(function()
+        if not espEnabled then return end
+        for _, plr in ipairs(game.Players:GetPlayers()) do
+            if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local targetRoot = plr.Character.HumanoidRootPart
+                local targetPos, onScreen = camera:WorldToViewportPoint(targetRoot.Position)
+                if onScreen then
+                    local dist = (root.Position - targetRoot.Position).Magnitude
+                    local health = plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health or 0
+                    local healthPercent = health / 100
+                    
+                    local box = Drawing.new("Square")
+                    box.Size = Vector2.new(60, 80)
+                    box.Position = Vector2.new(targetPos.X - 30, targetPos.Y - 40)
+                    box.Thickness = 2
+                    box.Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
+                    box.Transparency = 0.7
+                    box.Filled = false
+                    box.Visible = true
+                    table.insert(espObjects, box)
+                    
+                    local nameTag = Drawing.new("Text")
+                    nameTag.Position = Vector2.new(targetPos.X - 30, targetPos.Y - 50)
+                    nameTag.Text = plr.Name .. " | " .. math.floor(dist) .. "m"
+                    nameTag.Size = 16
+                    nameTag.Color = Color3.fromRGB(255, 255, 255)
+                    nameTag.Center = true
+                    nameTag.Visible = true
+                    table.insert(espObjects, nameTag)
+                    
+                    local healthBar = Drawing.new("Line")
+                    healthBar.From = Vector2.new(targetPos.X - 30, targetPos.Y + 40)
+                    healthBar.To = Vector2.new(targetPos.X - 30 + (60 * healthPercent), targetPos.Y + 40)
+                    healthBar.Thickness = 4
+                    healthBar.Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
+                    healthBar.Visible = true
+                    table.insert(espObjects, healthBar)
+                end
+            end
+        end
+    end)
+end
+
+local function getPlayersList()
+    local players = {}
+    for _, plr in ipairs(game.Players:GetPlayers()) do
+        if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            table.insert(players, plr)
+        end
+    end
+    return players
+end
+
+local function createPlayerSelector()
+    local selectorGui = Instance.new("ScreenGui")
+    selectorGui.Name = "PlayerSelector"
+    selectorGui.Parent = player.PlayerGui
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 200, 0, 300)
+    frame.Position = UDim2.new(0.5, -100, 0.5, -150)
+    frame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
+    frame.BackgroundTransparency = 0.2
+    frame.BorderSizePixel = 2
+    frame.BorderColor3 = Color3.fromRGB(180, 140, 255)
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = selectorGui
+    
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundColor3 = Color3.fromRGB(180, 140, 255)
+    title.Text = "Выберите цель"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.TextScaled = true
+    title.Font = Enum.Font.GothamBold
+    title.Parent = frame
+    
+    local list = Instance.new("ScrollingFrame")
+    list.Size = UDim2.new(1, -10, 1, -40)
+    list.Position = UDim2.new(0, 5, 0, 35)
+    list.BackgroundTransparency = 1
+    list.CanvasSize = UDim2.new(0, 0, 0, 0)
+    list.Parent = frame
+    
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 25, 1, -2)
+    closeBtn.Position = UDim2.new(1, -28, 0, 1)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextScaled = true
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.Parent = title
+    closeBtn.MouseButton1Click:Connect(function()
+        selectorGui:Destroy()
+    end)
+    
+    local y = 0
+    for _, plr in ipairs(getPlayersList()) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -10, 0, 30)
+        btn.Position = UDim2.new(0, 5, 0, y)
+        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+        btn.Text = plr.Name
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.TextScaled = true
+        btn.Font = Enum.Font.Gotham
+        btn.Parent = list
+        btn.MouseButton1Click:Connect(function()
+            pushTarget = plr
+            selectorGui:Destroy()
+            print("Цель выбрана: " .. plr.Name)
+        end)
+        y = y + 35
+    end
+    list.CanvasSize = UDim2.new(0, 0, 0, y)
+end
+
+function togglePush()
+    pushEnabled = not pushEnabled
+    
+    if pushEnabled then
+        createPlayerSelector()
+        
+        if pushConnection then pushConnection:Disconnect() end
+        pushConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not pushEnabled or not pushTarget or not pushTarget.Character then return end
+            local targetRoot = pushTarget.Character:FindFirstChild("HumanoidRootPart")
+            if not targetRoot then return end
+            
+            local angle = tick() * PUSH_ROTATION_SPEED
+            local radius = 10
+            local x = targetRoot.Position.X + math.cos(angle) * radius
+            local z = targetRoot.Position.Z + math.sin(angle) * radius
+            local y = targetRoot.Position.Y + 5
+            
+            root.CFrame = CFrame.new(Vector3.new(x, y, z), targetRoot.Position)
+            
+            local pushVelocity = Instance.new("BodyVelocity")
+            pushVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+            local dir = (targetRoot.Position - root.Position).Unit
+            pushVelocity.Velocity = dir * PUSH_FORCE + Vector3.new(0, PUSH_FORCE * 0.3, 0)
+            pushVelocity.Parent = targetRoot
+            
+            task.wait(0.1)
+            pushVelocity:Destroy()
+        end)
+    else
+        if pushConnection then pushConnection:Disconnect(); pushConnection = nil end
+        pushTarget = nil
+    end
+end
+
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ROCKET_GUI"
 screenGui.ResetOnSpawn = false
@@ -321,7 +485,7 @@ screenGui.Parent = player.PlayerGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 400)
+mainFrame.Size = UDim2.new(0, 280, 0, 450)
 mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
 mainFrame.BackgroundTransparency = 0.15
@@ -553,6 +717,8 @@ createToggleButton("godBtn", "GODMODE", 55, toggleGod, false)
 createToggleButton("killBtn", "KILL AURA", 100, toggleKillAura, false)
 createToggleButton("speedBtn", "SPEED", 145, toggleSpeed, true)
 createToggleButton("noclipBtn", "NOCLIP", 190, toggleNoclip, false)
+createToggleButton("espBtn", "ESP", 235, createESP, false)
+createToggleButton("pushBtn", "PUSH", 280, togglePush, false)
 
 local isMinimized = false
 local miniFrame = Instance.new("Frame")
@@ -603,4 +769,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - GODMODE & NOCLIP FIXED")
+print("Ebanat Hub: Universal loaded")
