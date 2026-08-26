@@ -14,6 +14,7 @@ local KILL_AURA_RANGE = 20
 local KILL_AURA_DELAY = 0.3
 local SPEED_MULTIPLIER = 50
 local FLY_SPEED = 60
+local DEFAULT_SPEED = 50
 
 local flyBodyVelocity = nil
 local flyGyro = nil
@@ -22,6 +23,7 @@ local godHeartbeatConnection = nil
 local speedHeartbeatConnection = nil
 local flyConnection = nil
 local noclipConnection = nil
+local godCharacterConnection = nil
 local noclipParts = {}
 
 local function applyNoclip(state)
@@ -138,34 +140,67 @@ end
 
 function toggleGod()
     godEnabled = not godEnabled
+    
     if godEnabled then
         if godHeartbeatConnection then godHeartbeatConnection:Disconnect() end
-        humanoid.MaxHealth = 9999999
-        humanoid.Health = 9999999
-        root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        if godCharacterConnection then godCharacterConnection:Disconnect() end
+        
+        local function applyGod()
+            if not character or not character.Parent then return end
+            humanoid = character:WaitForChild("Humanoid")
+            root = character:WaitForChild("HumanoidRootPart")
+            
+            humanoid.MaxHealth = math.huge
+            humanoid.Health = math.huge
+            humanoid.BreakJointsOnDeath = false
+            
+            root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+            
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+        
+        applyGod()
+        
         godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
             if not godEnabled then return end
-            if humanoid.Health < 9999999 then humanoid.Health = 9999999 end
-            root.Velocity = root.Velocity * 0.95
+            if not character or not character.Parent then return end
+            if humanoid and humanoid.Parent then
+                if humanoid.Health < humanoid.MaxHealth then
+                    humanoid.Health = humanoid.MaxHealth
+                end
+                if humanoid.Health <= 0 then
+                    humanoid.Health = humanoid.MaxHealth
+                end
+            end
         end)
-        player.CharacterAdded:Connect(function(newChar)
+        
+        godCharacterConnection = player.CharacterAdded:Connect(function(newChar)
             character = newChar
-            root = character:WaitForChild("HumanoidRootPart")
             humanoid = character:WaitForChild("Humanoid")
+            root = character:WaitForChild("HumanoidRootPart")
+            task.wait(0.1)
             if godEnabled then
-                humanoid.MaxHealth = 9999999
-                humanoid.Health = 9999999
-                root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-            end
-            if noclipEnabled then
-                applyNoclip(true)
+                applyGod()
+                if noclipEnabled then
+                    applyNoclip(true)
+                end
             end
         end)
+        
     else
         if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
-        humanoid.MaxHealth = 100
-        humanoid.Health = 100
-        root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
+        if godCharacterConnection then godCharacterConnection:Disconnect(); godCharacterConnection = nil end
+        
+        if character and character.Parent then
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+            humanoid.BreakJointsOnDeath = true
+            root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
+        end
     end
 end
 
@@ -292,7 +327,133 @@ buttonContainer.Position = UDim2.new(0, 10, 0, 40)
 buttonContainer.BackgroundTransparency = 1
 buttonContainer.Parent = mainFrame
 
-local function createToggleButton(name, label, yPos, toggleFunc)
+local speedControllerFrame = nil
+local speedSlider = nil
+local speedValueLabel = nil
+
+function createSpeedController()
+    if speedControllerFrame then
+        speedControllerFrame.Visible = true
+        return
+    end
+    
+    speedControllerFrame = Instance.new("Frame")
+    speedControllerFrame.Size = UDim2.new(0, 200, 0, 150)
+    speedControllerFrame.Position = UDim2.new(0.5, -100, 0.5, -75)
+    speedControllerFrame.BackgroundColor3 = Color3.fromRGB(20, 18, 40)
+    speedControllerFrame.BackgroundTransparency = 0.1
+    speedControllerFrame.BorderSizePixel = 2
+    speedControllerFrame.BorderColor3 = Color3.fromRGB(180, 140, 255)
+    speedControllerFrame.Active = true
+    speedControllerFrame.Draggable = true
+    speedControllerFrame.Visible = true
+    speedControllerFrame.Parent = screenGui
+    
+    local titleBar2 = Instance.new("Frame")
+    titleBar2.Size = UDim2.new(1, 0, 0, 30)
+    titleBar2.BackgroundColor3 = Color3.fromRGB(180, 140, 255)
+    titleBar2.BorderSizePixel = 0
+    titleBar2.Parent = speedControllerFrame
+    
+    local title2 = Instance.new("TextLabel")
+    title2.Size = UDim2.new(1, -30, 1, 0)
+    title2.Position = UDim2.new(0, 5, 0, 0)
+    title2.BackgroundTransparency = 1
+    title2.Text = "Speed Controller"
+    title2.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title2.TextScaled = true
+    title2.Font = Enum.Font.GothamBold
+    title2.TextXAlignment = Enum.TextXAlignment.Left
+    title2.Parent = titleBar2
+    
+    local closeBtn2 = Instance.new("TextButton")
+    closeBtn2.Size = UDim2.new(0, 25, 1, -2)
+    closeBtn2.Position = UDim2.new(1, -28, 0, 1)
+    closeBtn2.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
+    closeBtn2.Text = "X"
+    closeBtn2.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn2.TextScaled = true
+    closeBtn2.Font = Enum.Font.GothamBold
+    closeBtn2.Parent = titleBar2
+    closeBtn2.MouseButton1Click:Connect(function()
+        speedControllerFrame.Visible = false
+    end)
+    
+    local defaultLabel = Instance.new("TextLabel")
+    defaultLabel.Size = UDim2.new(1, -20, 0, 20)
+    defaultLabel.Position = UDim2.new(0, 10, 0, 40)
+    defaultLabel.BackgroundTransparency = 1
+    defaultLabel.Text = "Default: " .. DEFAULT_SPEED
+    defaultLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+    defaultLabel.TextScaled = true
+    defaultLabel.Font = Enum.Font.Gotham
+    defaultLabel.TextXAlignment = Enum.TextXAlignment.Left
+    defaultLabel.Parent = speedControllerFrame
+    
+    speedValueLabel = Instance.new("TextLabel")
+    speedValueLabel.Size = UDim2.new(1, -20, 0, 20)
+    speedValueLabel.Position = UDim2.new(0, 10, 0, 65)
+    speedValueLabel.BackgroundTransparency = 1
+    speedValueLabel.Text = "Current: " .. SPEED_MULTIPLIER
+    speedValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    speedValueLabel.TextScaled = true
+    speedValueLabel.Font = Enum.Font.GothamBold
+    speedValueLabel.TextXAlignment = Enum.TextXAlignment.Left
+    speedValueLabel.Parent = speedControllerFrame
+    
+    speedSlider = Instance.new("TextBox")
+    speedSlider.Size = UDim2.new(0, 160, 0, 20)
+    speedSlider.Position = UDim2.new(0.5, -80, 0, 95)
+    speedSlider.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    speedSlider.Text = tostring(SPEED_MULTIPLIER)
+    speedSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
+    speedSlider.TextScaled = true
+    speedSlider.Font = Enum.Font.Gotham
+    speedSlider.ClearTextOnFocus = false
+    speedSlider.Parent = speedControllerFrame
+    
+    local setBtn = Instance.new("TextButton")
+    setBtn.Size = UDim2.new(0, 60, 0, 25)
+    setBtn.Position = UDim2.new(0.5, -30, 0, 120)
+    setBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
+    setBtn.Text = "Set"
+    setBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    setBtn.TextScaled = true
+    setBtn.Font = Enum.Font.GothamBold
+    setBtn.Parent = speedControllerFrame
+    setBtn.MouseButton1Click:Connect(function()
+        local val = tonumber(speedSlider.Text)
+        if val and val >= 10 and val <= 200 then
+            SPEED_MULTIPLIER = val
+            speedValueLabel.Text = "Current: " .. SPEED_MULTIPLIER
+            if speedEnabled then
+                humanoid.WalkSpeed = SPEED_MULTIPLIER
+            end
+        else
+            speedSlider.Text = tostring(SPEED_MULTIPLIER)
+        end
+    end)
+    
+    local defaultBtn = Instance.new("TextButton")
+    defaultBtn.Size = UDim2.new(0, 80, 0, 25)
+    defaultBtn.Position = UDim2.new(0.5, -90, 0, 120)
+    defaultBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
+    defaultBtn.Text = "Default"
+    defaultBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    defaultBtn.TextScaled = true
+    defaultBtn.Font = Enum.Font.GothamBold
+    defaultBtn.Parent = speedControllerFrame
+    defaultBtn.MouseButton1Click:Connect(function()
+        SPEED_MULTIPLIER = DEFAULT_SPEED
+        speedSlider.Text = tostring(DEFAULT_SPEED)
+        speedValueLabel.Text = "Current: " .. DEFAULT_SPEED
+        if speedEnabled then
+            humanoid.WalkSpeed = DEFAULT_SPEED
+        end
+    end)
+end
+
+local function createToggleButton(name, label, yPos, toggleFunc, hasMenu)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 35)
     btn.Position = UDim2.new(0, 0, 0, yPos)
@@ -305,6 +466,24 @@ local function createToggleButton(name, label, yPos, toggleFunc)
     btn.BorderColor3 = Color3.fromRGB(100, 100, 150)
     btn.Parent = buttonContainer
     local state = false
+    
+    if hasMenu then
+        local dots = Instance.new("TextLabel")
+        dots.Size = UDim2.new(0, 20, 1, 0)
+        dots.Position = UDim2.new(1, -25, 0, 0)
+        dots.BackgroundTransparency = 1
+        dots.Text = "…"
+        dots.TextColor3 = Color3.fromRGB(180, 140, 255)
+        dots.TextScaled = true
+        dots.Font = Enum.Font.GothamBold
+        dots.TextXAlignment = Enum.TextXAlignment.Center
+        dots.Parent = btn
+        
+        btn.MouseButton2Click:Connect(function()
+            createSpeedController()
+        end)
+    end
+    
     btn.MouseButton1Click:Connect(function()
         state = not state
         toggleFunc()
@@ -321,11 +500,11 @@ local function createToggleButton(name, label, yPos, toggleFunc)
     return btn
 end
 
-createToggleButton("flyBtn", "FLY", 10, toggleFly)
-createToggleButton("godBtn", "GODMODE", 55, toggleGod)
-createToggleButton("killBtn", "KILL AURA", 100, toggleKillAura)
-createToggleButton("speedBtn", "SPEED", 145, toggleSpeed)
-createToggleButton("noclipBtn", "NOCLIP", 190, toggleNoclip)
+createToggleButton("flyBtn", "FLY", 10, toggleFly, false)
+createToggleButton("godBtn", "GODMODE", 55, toggleGod, false)
+createToggleButton("killBtn", "KILL AURA", 100, toggleKillAura, false)
+createToggleButton("speedBtn", "SPEED", 145, toggleSpeed, true)
+createToggleButton("noclipBtn", "NOCLIP", 190, toggleNoclip, false)
 
 local isMinimized = false
 local miniFrame = Instance.new("Frame")
@@ -376,4 +555,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - NOCLIP FIXED")
+print("Ebanat Hub: Universal loaded - Speed regulator added")
