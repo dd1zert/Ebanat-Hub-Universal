@@ -21,24 +21,28 @@ local killAuraConnection = nil
 local godHeartbeatConnection = nil
 local speedHeartbeatConnection = nil
 local flyConnection = nil
+local noclipConnection = nil
 local noclipParts = {}
 
-function setNoclip(state)
+local function applyNoclip(state)
     noclipEnabled = state
     if state then
+        noclipParts = {}
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
                 table.insert(noclipParts, part)
             end
         end
-        character.ChildAdded:Connect(function(child)
+        if noclipConnection then noclipConnection:Disconnect() end
+        noclipConnection = character.ChildAdded:Connect(function(child)
             if child:IsA("BasePart") then
                 child.CanCollide = false
                 table.insert(noclipParts, child)
             end
         end)
     else
+        if noclipConnection then noclipConnection:Disconnect(); noclipConnection = nil end
         for _, part in ipairs(noclipParts) do
             if part and part.Parent then
                 part.CanCollide = true
@@ -53,14 +57,32 @@ function setNoclip(state)
     end
 end
 
+local function syncNoclip()
+    if noclipEnabled then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    else
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+
 function toggleNoclip()
-    setNoclip(not noclipEnabled)
+    applyNoclip(not noclipEnabled)
 end
 
 function toggleFly()
     flyEnabled = not flyEnabled
     if flyEnabled then
-        if not noclipEnabled then setNoclip(true) end
+        if not noclipEnabled then
+            applyNoclip(true)
+        end
         flyBodyVelocity = Instance.new("BodyVelocity")
         flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
         flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -102,7 +124,11 @@ function toggleFly()
             flyGyro.CFrame = targetCFrame
         end)
     else
-        if not noclipEnabled then setNoclip(false) end
+        if not noclipEnabled then
+            applyNoclip(false)
+        else
+            syncNoclip()
+        end
         if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
         if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
         if flyGyro then flyGyro:Destroy(); flyGyro = nil end
@@ -130,6 +156,9 @@ function toggleGod()
                 humanoid.MaxHealth = 9999999
                 humanoid.Health = 9999999
                 root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+            end
+            if noclipEnabled then
+                applyNoclip(true)
             end
         end)
     else
@@ -347,4 +376,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - FLY + NOCLIP отдельная кнопка")
+print("Ebanat Hub: Universal loaded - NOCLIP FIXED")
