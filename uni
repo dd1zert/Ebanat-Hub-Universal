@@ -43,14 +43,16 @@ function toggleFly()
             local camCFrame = camera.CFrame
             local forward = camCFrame.LookVector
             local right = camCFrame.RightVector
-            local up = camCFrame.UpVector
+            local up = Vector3.new(0, 1, 0)
 
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then move = move + forward end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then move = move - forward end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then move = move - right end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then move = move + right end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then move = move + up end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
+            local input = game:GetService("UserInputService")
+
+            if input:IsKeyDown(Enum.KeyCode.W) then move = move + forward end
+            if input:IsKeyDown(Enum.KeyCode.S) then move = move - forward end
+            if input:IsKeyDown(Enum.KeyCode.A) then move = move - right end
+            if input:IsKeyDown(Enum.KeyCode.D) then move = move + right end
+            if input:IsKeyDown(Enum.KeyCode.Space) then move = move + up end
+            if input:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
 
             if move.Magnitude > 0 then
                 move = move.Unit * FLY_SPEED
@@ -306,4 +308,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - FLY по направлению мыши")
+print("Ebanat Hub: Universal loaded - FLY улучшен (все направления)")
