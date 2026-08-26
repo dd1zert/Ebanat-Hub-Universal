@@ -13,6 +13,139 @@ local KILL_AURA_DELAY = 0.3
 local SPEED_MULTIPLIER = 50
 local FLY_SPEED = 60
 
+local flyBodyVelocity = nil
+local flyGyro = nil
+local killAuraConnection = nil
+local godHeartbeatConnection = nil
+local speedHeartbeatConnection = nil
+
+function toggleFly()
+    flyEnabled = not flyEnabled
+    if flyEnabled then
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVelocity.Parent = root
+        flyGyro = Instance.new("BodyGyro")
+        flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+        flyGyro.Parent = root
+        humanoid.PlatformStand = true
+        game:GetService("RunService").RenderStepped:Connect(function()
+            if not flyEnabled then return end
+            local move = Vector3.new()
+            local forward = root.CFrame.LookVector
+            local right = root.CFrame.RightVector
+            local up = root.CFrame.UpVector
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then move = move + forward end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then move = move - forward end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then move = move - right end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then move = move + right end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then move = move + up end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
+            if move.Magnitude > 0 then move = move.Unit * FLY_SPEED end
+            flyBodyVelocity.Velocity = move
+            flyGyro.CFrame = root.CFrame
+        end)
+    else
+        if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+        if flyGyro then flyGyro:Destroy(); flyGyro = nil end
+        humanoid.PlatformStand = false
+    end
+end
+
+function toggleGod()
+    godEnabled = not godEnabled
+    if godEnabled then
+        if godHeartbeatConnection then godHeartbeatConnection:Disconnect() end
+        humanoid.MaxHealth = 9999999
+        humanoid.Health = 9999999
+        root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not godEnabled then return end
+            if humanoid.Health < 9999999 then humanoid.Health = 9999999 end
+            root.Velocity = root.Velocity * 0.95
+        end)
+        player.CharacterAdded:Connect(function(newChar)
+            character = newChar
+            root = character:WaitForChild("HumanoidRootPart")
+            humanoid = character:WaitForChild("Humanoid")
+            if godEnabled then
+                humanoid.MaxHealth = 9999999
+                humanoid.Health = 9999999
+                root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+            end
+        end)
+    else
+        if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
+        humanoid.MaxHealth = 100
+        humanoid.Health = 100
+        root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
+    end
+end
+
+function toggleKillAura()
+    killAuraEnabled = not killAuraEnabled
+    if killAuraEnabled then
+        if killAuraConnection then killAuraConnection:Disconnect() end
+        killAuraConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not killAuraEnabled then return end
+            local nearest = nil
+            local nearestDist = KILL_AURA_RANGE + 1
+            for _, plr in ipairs(game.Players:GetPlayers()) do
+                if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (root.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+                    if dist < nearestDist and plr.Character.Humanoid.Health > 0 then
+                        nearest = plr
+                        nearestDist = dist
+                    end
+                end
+            end
+            if nearest then
+                local targetRoot = nearest.Character.HumanoidRootPart
+                local lookAt = (targetRoot.Position - root.Position).Unit
+                root.CFrame = CFrame.new(root.Position, root.Position + lookAt)
+                local tool = player.Character:FindFirstChildOfClass("Tool")
+                if tool and tool:FindFirstChild("Handle") then
+                    tool:Activate()
+                    task.wait(KILL_AURA_DELAY)
+                    tool:Deactivate()
+                else
+                    if targetRoot.Parent:FindFirstChild("Humanoid") then
+                        targetRoot.Parent.Humanoid:TakeDamage(30)
+                    end
+                end
+                task.wait(KILL_AURA_DELAY)
+            end
+        end)
+    else
+        if killAuraConnection then killAuraConnection:Disconnect(); killAuraConnection = nil end
+    end
+end
+
+function toggleSpeed()
+    speedEnabled = not speedEnabled
+    if speedEnabled then
+        if speedHeartbeatConnection then speedHeartbeatConnection:Disconnect() end
+        local origWalkSpeed = humanoid.WalkSpeed
+        humanoid.WalkSpeed = SPEED_MULTIPLIER
+        humanoid.JumpPower = 100
+        humanoid.AutoRotate = true
+        speedHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not speedEnabled then 
+                humanoid.WalkSpeed = origWalkSpeed 
+                humanoid.JumpPower = 50
+                return 
+            end
+            humanoid.WalkSpeed = SPEED_MULTIPLIER
+            humanoid.JumpPower = 100
+        end)
+    else
+        if speedHeartbeatConnection then speedHeartbeatConnection:Disconnect(); speedHeartbeatConnection = nil end
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+    end
+end
+
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ROCKET_GUI"
 screenGui.ResetOnSpawn = false
@@ -156,131 +289,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-local flyBodyVelocity = nil
-local flyGyro = nil
-
-function toggleFly()
-    flyEnabled = not flyEnabled
-    if flyEnabled then
-        flyBodyVelocity = Instance.new("BodyVelocity")
-        flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-        flyBodyVelocity.Parent = root
-        flyGyro = Instance.new("BodyGyro")
-        flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-        flyGyro.Parent = root
-        humanoid.PlatformStand = true
-        game:GetService("RunService").RenderStepped:Connect(function()
-            if not flyEnabled then return end
-            local move = Vector3.new()
-            local forward = root.CFrame.LookVector
-            local right = root.CFrame.RightVector
-            local up = root.CFrame.UpVector
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then move = move + forward end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then move = move - forward end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then move = move - right end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then move = move + right end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then move = move + up end
-            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
-            if move.Magnitude > 0 then move = move.Unit * FLY_SPEED end
-            flyBodyVelocity.Velocity = move
-            flyGyro.CFrame = root.CFrame
-        end)
-    else
-        if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
-        if flyGyro then flyGyro:Destroy(); flyGyro = nil end
-        humanoid.PlatformStand = false
-    end
-end
-
-function toggleGod()
-    godEnabled = not godEnabled
-    if godEnabled then
-        player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            root = character:WaitForChild("HumanoidRootPart")
-            humanoid = character:WaitForChild("Humanoid")
-            if godEnabled then
-                humanoid.MaxHealth = 9999999
-                humanoid.Health = 9999999
-                root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-            end
-        end)
-        humanoid.MaxHealth = 9999999
-        humanoid.Health = 9999999
-        root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-        game:GetService("RunService").Heartbeat:Connect(function()
-            if not godEnabled then return end
-            if humanoid.Health < 9999999 then humanoid.Health = 9999999 end
-            root.Velocity = root.Velocity * 0.95
-        end)
-    else
-        humanoid.MaxHealth = 100
-        humanoid.Health = 100
-        root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
-    end
-end
-
-local killAuraConnection = nil
-
-function toggleKillAura()
-    killAuraEnabled = not killAuraEnabled
-    if killAuraEnabled then
-        killAuraConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not killAuraEnabled then return end
-            local nearest = nil
-            local nearestDist = KILL_AURA_RANGE + 1
-            for _, plr in ipairs(game.Players:GetPlayers()) do
-                if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                    local dist = (root.Position - plr.Character.HumanoidRootPart.Position).Magnitude
-                    if dist < nearestDist and plr.Character.Humanoid.Health > 0 then
-                        nearest = plr
-                        nearestDist = dist
-                    end
-                end
-            end
-            if nearest then
-                local targetRoot = nearest.Character.HumanoidRootPart
-                local lookAt = (targetRoot.Position - root.Position).Unit
-                root.CFrame = CFrame.new(root.Position, root.Position + lookAt)
-                local tool = player.Character:FindFirstChildOfClass("Tool")
-                if tool and tool:FindFirstChild("Handle") then
-                    tool:Activate()
-                    wait(KILL_AURA_DELAY)
-                    tool:Deactivate()
-                else
-                    if targetRoot.Parent:FindFirstChild("Humanoid") then
-                        targetRoot.Parent.Humanoid:TakeDamage(30)
-                    end
-                end
-                wait(KILL_AURA_DELAY)
-            end
-        end)
-    else
-        if killAuraConnection then killAuraConnection:Disconnect(); killAuraConnection = nil end
-    end
-end
-
-function toggleSpeed()
-    speedEnabled = not speedEnabled
-    if speedEnabled then
-        local origWalkSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = SPEED_MULTIPLIER
-        humanoid.JumpPower = 100
-        humanoid.AutoRotate = true
-        game:GetService("RunService").Heartbeat:Connect(function()
-            if not speedEnabled then 
-                humanoid.WalkSpeed = origWalkSpeed 
-                humanoid.JumpPower = 50
-                return 
-            end
-            humanoid.WalkSpeed = SPEED_MULTIPLIER
-            humanoid.JumpPower = 100
-        end)
-    else
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-    end
-end
-
-print("Ebanat Hub: Universal loaded")
+print("Ebanat Hub: Universal loaded - кнопки работают")
