@@ -1,0 +1,295 @@
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local root = character:WaitForChild("HumanoidRootPart")
+
+local flyEnabled = false
+local godEnabled = false
+local killAuraEnabled = false
+local speedEnabled = false
+
+local KILL_AURA_RANGE = 20
+local KILL_AURA_DELAY = 0.3
+local SPEED_MULTIPLIER = 50
+local FLY_SPEED = 60
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ROCKET_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 280, 0, 340)
+mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 2
+mainFrame.BorderColor3 = Color3.fromRGB(0, 200, 255)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(0, 180, 1, 0)
+title.Position = UDim2.new(0, 5, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Ebanat Hub: Universal"
+title.TextColor3 = Color3.fromRGB(180, 140, 255)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = titleBar
+
+local panelLabel = Instance.new("TextLabel")
+panelLabel.Size = UDim2.new(0, 60, 1, 0)
+panelLabel.Position = UDim2.new(1, -115, 0, 0)
+panelLabel.BackgroundTransparency = 1
+panelLabel.Text = "PANEL"
+panelLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+panelLabel.TextScaled = true
+panelLabel.Font = Enum.Font.Gotham
+panelLabel.TextXAlignment = Enum.TextXAlignment.Right
+panelLabel.Parent = titleBar
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 25, 1, -2)
+minBtn.Position = UDim2.new(1, -55, 0, 1)
+minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+minBtn.Text = "-"
+minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minBtn.TextScaled = true
+minBtn.Font = Enum.Font.GothamBold
+minBtn.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 25, 1, -2)
+closeBtn.Position = UDim2.new(1, -28, 0, 1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextScaled = true
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = titleBar
+
+local buttonContainer = Instance.new("Frame")
+buttonContainer.Size = UDim2.new(1, -20, 1, -50)
+buttonContainer.Position = UDim2.new(0, 10, 0, 40)
+buttonContainer.BackgroundTransparency = 1
+buttonContainer.Parent = mainFrame
+
+local function createToggleButton(name, label, yPos, toggleFunc)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 35)
+    btn.Position = UDim2.new(0, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    btn.Text = label .. " : OFF"
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.TextScaled = true
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 1
+    btn.BorderColor3 = Color3.fromRGB(100, 100, 150)
+    btn.Parent = buttonContainer
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        toggleFunc()
+        if state then
+            btn.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
+            btn.Text = label .. " : ON"
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+            btn.Text = label .. " : OFF"
+            btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+        end
+    end)
+    return btn
+end
+
+createToggleButton("flyBtn", "FLY", 10, toggleFly)
+createToggleButton("godBtn", "GODMODE", 55, toggleGod)
+createToggleButton("killBtn", "KILL AURA", 100, toggleKillAura)
+createToggleButton("speedBtn", "SPEED", 145, toggleSpeed)
+
+local isMinimized = false
+local miniFrame = Instance.new("Frame")
+miniFrame.Size = UDim2.new(0, 120, 0, 30)
+miniFrame.Position = UDim2.new(0.5, -60, 0.3, 0)
+miniFrame.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+miniFrame.BorderSizePixel = 2
+miniFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+miniFrame.Active = true
+miniFrame.Draggable = true
+miniFrame.Visible = false
+miniFrame.Parent = screenGui
+
+local miniLabel = Instance.new("TextLabel")
+miniLabel.Size = UDim2.new(1, -30, 1, 0)
+miniLabel.Position = UDim2.new(0, 5, 0, 0)
+miniLabel.BackgroundTransparency = 1
+miniLabel.Text = "Ebanat Hub"
+miniLabel.TextColor3 = Color3.fromRGB(180, 140, 255)
+miniLabel.TextScaled = true
+miniLabel.Font = Enum.Font.GothamBold
+miniLabel.TextXAlignment = Enum.TextXAlignment.Left
+miniLabel.Parent = miniFrame
+
+local miniRestore = Instance.new("TextButton")
+miniRestore.Size = UDim2.new(0, 25, 1, -2)
+miniRestore.Position = UDim2.new(1, -28, 0, 1)
+miniRestore.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+miniRestore.Text = "+"
+miniRestore.TextColor3 = Color3.fromRGB(255, 255, 255)
+miniRestore.TextScaled = true
+miniRestore.Font = Enum.Font.GothamBold
+miniRestore.Parent = miniFrame
+
+minBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    mainFrame.Visible = not isMinimized
+    miniFrame.Visible = isMinimized
+end)
+
+miniRestore.MouseButton1Click:Connect(function()
+    isMinimized = false
+    mainFrame.Visible = true
+    miniFrame.Visible = false
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    screenGui:Destroy()
+end)
+
+local flyBodyVelocity = nil
+local flyGyro = nil
+
+function toggleFly()
+    flyEnabled = not flyEnabled
+    if flyEnabled then
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVelocity.Parent = root
+        flyGyro = Instance.new("BodyGyro")
+        flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+        flyGyro.Parent = root
+        humanoid.PlatformStand = true
+        game:GetService("RunService").RenderStepped:Connect(function()
+            if not flyEnabled then return end
+            local move = Vector3.new()
+            local forward = root.CFrame.LookVector
+            local right = root.CFrame.RightVector
+            local up = root.CFrame.UpVector
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.W) then move = move + forward end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.S) then move = move - forward end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.A) then move = move - right end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.D) then move = move + right end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.Space) then move = move + up end
+            if game:GetService("UserInputService"):IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
+            if move.Magnitude > 0 then move = move.Unit * FLY_SPEED end
+            flyBodyVelocity.Velocity = move
+            flyGyro.CFrame = root.CFrame
+        end)
+    else
+        if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+        if flyGyro then flyGyro:Destroy(); flyGyro = nil end
+        humanoid.PlatformStand = false
+    end
+end
+
+function toggleGod()
+    godEnabled = not godEnabled
+    if godEnabled then
+        player.CharacterAdded:Connect(function(newChar)
+            character = newChar
+            root = character:WaitForChild("HumanoidRootPart")
+            humanoid = character:WaitForChild("Humanoid")
+            if godEnabled then
+                humanoid.MaxHealth = 9999999
+                humanoid.Health = 9999999
+                root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+            end
+        end)
+        humanoid.MaxHealth = 9999999
+        humanoid.Health = 9999999
+        root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        game:GetService("RunService").Heartbeat:Connect(function()
+            if not godEnabled then return end
+            if humanoid.Health < 9999999 then humanoid.Health = 9999999 end
+            root.Velocity = root.Velocity * 0.95
+        end)
+    else
+        humanoid.MaxHealth = 100
+        humanoid.Health = 100
+        root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
+    end
+end
+
+local killAuraConnection = nil
+
+function toggleKillAura()
+    killAuraEnabled = not killAuraEnabled
+    if killAuraEnabled then
+        killAuraConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not killAuraEnabled then return end
+            local nearest = nil
+            local nearestDist = KILL_AURA_RANGE + 1
+            for _, plr in ipairs(game.Players:GetPlayers()) do
+                if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (root.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+                    if dist < nearestDist and plr.Character.Humanoid.Health > 0 then
+                        nearest = plr
+                        nearestDist = dist
+                    end
+                end
+            end
+            if nearest then
+                local targetRoot = nearest.Character.HumanoidRootPart
+                local lookAt = (targetRoot.Position - root.Position).Unit
+                root.CFrame = CFrame.new(root.Position, root.Position + lookAt)
+                local tool = player.Character:FindFirstChildOfClass("Tool")
+                if tool and tool:FindFirstChild("Handle") then
+                    tool:Activate()
+                    wait(KILL_AURA_DELAY)
+                    tool:Deactivate()
+                else
+                    if targetRoot.Parent:FindFirstChild("Humanoid") then
+                        targetRoot.Parent.Humanoid:TakeDamage(30)
+                    end
+                end
+                wait(KILL_AURA_DELAY)
+            end
+        end)
+    else
+        if killAuraConnection then killAuraConnection:Disconnect(); killAuraConnection = nil end
+    end
+end
+
+function toggleSpeed()
+    speedEnabled = not speedEnabled
+    if speedEnabled then
+        local origWalkSpeed = humanoid.WalkSpeed
+        humanoid.WalkSpeed = SPEED_MULTIPLIER
+        humanoid.JumpPower = 100
+        humanoid.AutoRotate = true
+        game:GetService("RunService").Heartbeat:Connect(function()
+            if not speedEnabled then 
+                humanoid.WalkSpeed = origWalkSpeed 
+                humanoid.JumpPower = 50
+                return 
+            end
+            humanoid.WalkSpeed = SPEED_MULTIPLIER
+            humanoid.JumpPower = 100
+        end)
+    else
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+    end
+end
