@@ -8,6 +8,7 @@ local flyEnabled = false
 local godEnabled = false
 local killAuraEnabled = false
 local speedEnabled = false
+local noclipEnabled = false
 
 local KILL_AURA_RANGE = 20
 local KILL_AURA_DELAY = 0.3
@@ -20,10 +21,46 @@ local killAuraConnection = nil
 local godHeartbeatConnection = nil
 local speedHeartbeatConnection = nil
 local flyConnection = nil
+local noclipParts = {}
+
+function setNoclip(state)
+    noclipEnabled = state
+    if state then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+                table.insert(noclipParts, part)
+            end
+        end
+        character.ChildAdded:Connect(function(child)
+            if child:IsA("BasePart") then
+                child.CanCollide = false
+                table.insert(noclipParts, child)
+            end
+        end)
+    else
+        for _, part in ipairs(noclipParts) do
+            if part and part.Parent then
+                part.CanCollide = true
+            end
+        end
+        noclipParts = {}
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+
+function toggleNoclip()
+    setNoclip(not noclipEnabled)
+end
 
 function toggleFly()
     flyEnabled = not flyEnabled
     if flyEnabled then
+        if not noclipEnabled then setNoclip(true) end
         flyBodyVelocity = Instance.new("BodyVelocity")
         flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
         flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -65,6 +102,7 @@ function toggleFly()
             flyGyro.CFrame = targetCFrame
         end)
     else
+        if not noclipEnabled then setNoclip(false) end
         if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
         if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
         if flyGyro then flyGyro:Destroy(); flyGyro = nil end
@@ -172,7 +210,7 @@ screenGui.Parent = player.PlayerGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 340)
+mainFrame.Size = UDim2.new(0, 280, 0, 400)
 mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
 mainFrame.BackgroundTransparency = 0.15
@@ -258,6 +296,7 @@ createToggleButton("flyBtn", "FLY", 10, toggleFly)
 createToggleButton("godBtn", "GODMODE", 55, toggleGod)
 createToggleButton("killBtn", "KILL AURA", 100, toggleKillAura)
 createToggleButton("speedBtn", "SPEED", 145, toggleSpeed)
+createToggleButton("noclipBtn", "NOCLIP", 190, toggleNoclip)
 
 local isMinimized = false
 local miniFrame = Instance.new("Frame")
@@ -308,4 +347,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - FLY улучшен (все направления)")
+print("Ebanat Hub: Universal loaded - FLY + NOCLIP отдельная кнопка")
