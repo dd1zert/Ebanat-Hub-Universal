@@ -23,9 +23,77 @@ local godHeartbeatConnection = nil
 local speedHeartbeatConnection = nil
 local flyConnection = nil
 local godCharacterConnection = nil
-
 local noclipConnections = {}
 
+-- ===== GODMODE (АГРЕССИВНЫЙ) =====
+function toggleGod()
+    godEnabled = not godEnabled
+    
+    if godEnabled then
+        if godHeartbeatConnection then godHeartbeatConnection:Disconnect() end
+        if godCharacterConnection then godCharacterConnection:Disconnect() end
+        
+        local function applyGod()
+            if not character or not character.Parent then return end
+            humanoid = character:WaitForChild("Humanoid")
+            root = character:WaitForChild("HumanoidRootPart")
+            
+            humanoid.MaxHealth = 9e9
+            humanoid.Health = 9e9
+            humanoid.BreakJointsOnDeath = false
+            
+            root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+        end
+        
+        applyGod()
+        
+        -- ОСНОВНОЙ ЦИКЛ ЗАЩИТЫ (каждый кадр)
+        godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
+            if not godEnabled then return end
+            if not character or not character.Parent then return end
+            
+            if humanoid and humanoid.Parent then
+                if humanoid.Health <= 0 or humanoid.Health < 1000 then
+                    humanoid.Health = 9e9
+                end
+                if humanoid.MaxHealth < 9e8 then
+                    humanoid.MaxHealth = 9e9
+                end
+            end
+            
+            -- Защита от BreakJoints
+            if character:FindFirstChild("Humanoid") then
+                if humanoid.Health <= 0 then
+                    humanoid.Health = 9e9
+                end
+            end
+        end)
+        
+        -- ЗАЩИТА ПРИ РЕСПАВНЕ
+        godCharacterConnection = player.CharacterAdded:Connect(function(newChar)
+            character = newChar
+            humanoid = character:WaitForChild("Humanoid")
+            root = character:WaitForChild("HumanoidRootPart")
+            task.wait(0.1)
+            if godEnabled then
+                applyGod()
+            end
+        end)
+        
+    else
+        if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
+        if godCharacterConnection then godCharacterConnection:Disconnect(); godCharacterConnection = nil end
+        
+        if character and character.Parent then
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+            humanoid.BreakJointsOnDeath = true
+            root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
+        end
+    end
+end
+
+-- ===== NOCLIP (АГРЕССИВНЫЙ) =====
 local function applyNoclipToAllParts(state)
     local currentChar = player.Character
     if not currentChar then return end
@@ -39,6 +107,7 @@ end
 local function startNoclipLoop()
     if noclipConnections.heartbeat then noclipConnections.heartbeat:Disconnect() end
     if noclipConnections.renderstep then noclipConnections.renderstep:Disconnect() end
+    if noclipConnections.stepped then noclipConnections.stepped:Disconnect() end
     
     noclipConnections.heartbeat = game:GetService("RunService").Heartbeat:Connect(function()
         if noclipEnabled then
@@ -51,11 +120,18 @@ local function startNoclipLoop()
             applyNoclipToAllParts(true)
         end
     end)
+    
+    noclipConnections.stepped = game:GetService("RunService").Stepped:Connect(function()
+        if noclipEnabled then
+            applyNoclipToAllParts(true)
+        end
+    end)
 end
 
 local function stopNoclipLoop()
     if noclipConnections.heartbeat then noclipConnections.heartbeat:Disconnect(); noclipConnections.heartbeat = nil end
     if noclipConnections.renderstep then noclipConnections.renderstep:Disconnect(); noclipConnections.renderstep = nil end
+    if noclipConnections.stepped then noclipConnections.stepped:Disconnect(); noclipConnections.stepped = nil end
 end
 
 function toggleNoclip()
@@ -77,6 +153,7 @@ function toggleNoclip()
     end
 end
 
+-- ===== FLY (С ПРИНУДИТЕЛЬНЫМ НОКЛИПОМ) =====
 function toggleFly()
     flyEnabled = not flyEnabled
     if flyEnabled then
@@ -171,63 +248,7 @@ function toggleFly()
     end
 end
 
-function toggleGod()
-    godEnabled = not godEnabled
-    
-    if godEnabled then
-        if godHeartbeatConnection then godHeartbeatConnection:Disconnect() end
-        if godCharacterConnection then godCharacterConnection:Disconnect() end
-        
-        local function applyGod()
-            if not character or not character.Parent then return end
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
-            
-            humanoid.MaxHealth = math.huge
-            humanoid.Health = math.huge
-            humanoid.BreakJointsOnDeath = false
-            
-            root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-        end
-        
-        applyGod()
-        
-        godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not godEnabled then return end
-            if not character or not character.Parent then return end
-            if humanoid and humanoid.Parent then
-                if humanoid.Health < humanoid.MaxHealth then
-                    humanoid.Health = humanoid.MaxHealth
-                end
-                if humanoid.Health <= 0 then
-                    humanoid.Health = humanoid.MaxHealth
-                end
-            end
-        end)
-        
-        godCharacterConnection = player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
-            task.wait(0.1)
-            if godEnabled then
-                applyGod()
-            end
-        end)
-        
-    else
-        if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
-        if godCharacterConnection then godCharacterConnection:Disconnect(); godCharacterConnection = nil end
-        
-        if character and character.Parent then
-            humanoid.MaxHealth = 100
-            humanoid.Health = 100
-            humanoid.BreakJointsOnDeath = true
-            root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
-        end
-    end
-end
-
+-- ===== KILL AURA =====
 function toggleKillAura()
     killAuraEnabled = not killAuraEnabled
     if killAuraEnabled then
@@ -267,6 +288,7 @@ function toggleKillAura()
     end
 end
 
+-- ===== SPEED =====
 function toggleSpeed()
     speedEnabled = not speedEnabled
     if speedEnabled then
@@ -291,6 +313,7 @@ function toggleSpeed()
     end
 end
 
+-- ===== GUI (без изменений) =====
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ROCKET_GUI"
 screenGui.ResetOnSpawn = false
@@ -580,4 +603,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - BUTTONS FIXED")
+print("Ebanat Hub: Universal loaded - GODMODE & NOCLIP FIXED")
