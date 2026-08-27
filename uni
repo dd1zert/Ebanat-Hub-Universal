@@ -1,772 +1,91 @@
-local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local root = character:WaitForChild("HumanoidRootPart")
-local camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
-local flyEnabled = false
-local godEnabled = false
-local killAuraEnabled = false
-local speedEnabled = false
-local noclipEnabled = false
-local espEnabled = false
-local pushEnabled = false
+-- НАСТРОЙКИ ESP
+local ESP_COLOR = Color3.new(0, 1, 0) -- Чисто зеленый (можно поменять)
+local BOX_SIZE = Vector3.new(4, 6, 4) -- Размеры рамки
+local TEXT_SIZE = 14
+local SHOW_ALWAYS = true -- true = видно даже мертвых и сквозь стены
 
-local KILL_AURA_RANGE = 20
-local KILL_AURA_DELAY = 0.3
-local SPEED_MULTIPLIER = 50
-local FLY_SPEED = 60
-local DEFAULT_SPEED = 50
-local PUSH_FORCE = 1000
-local PUSH_ROTATION_SPEED = 50
+local espCache = {}
 
-local flyBodyVelocity = nil
-local flyGyro = nil
-local killAuraConnection = nil
-local godHeartbeatConnection = nil
-local speedHeartbeatConnection = nil
-local flyConnection = nil
-local godCharacterConnection = nil
-local noclipConnections = {}
-local espObjects = {}
-local pushConnection = nil
-local pushTarget = nil
+local function createESP(player)
+    local character = player.Character
+    if not character then return end
 
-local function applyNoclipToAllParts(state)
-    local currentChar = player.Character
-    if not currentChar then return end
-    for _, part in ipairs(currentChar:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = not state
-        end
+    -- Рамка
+    local box = Instance.new("BoxHandleAdornment")
+    box.Size = BOX_SIZE
+    box.Adornee = character
+    box.AlwaysOnTop = SHOW_ALWAYS 
+    box.ZIndex = 10
+    box.Color3 = ESP_COLOR
+    box.Transparency = 0.5
+    box.Parent = character
+
+    -- Текст (Имя и Дистанция)
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(0, 200, 0, 25)
+    text.BackgroundTransparency = 1
+    text.Position = UDim2.new(0.5, -100, -0.2, 0)
+    text.TextColor3 = ESP_COLOR
+    text.TextStrokeTransparency = 0.5
+    text.TextSize = TEXT_SIZE
+    text.Font = Enum.Font.Code
+    text.Parent = character
+
+    espCache[player] = {Box = box, Text = text}
+end
+
+local function removeESP(player)
+    if espCache[player] then
+        espCache[player].Box:Destroy()
+        espCache[player].Text:Destroy()
+        espCache[player] = nil
     end
 end
 
-local function startNoclipLoop()
-    if noclipConnections.heartbeat then noclipConnections.heartbeat:Disconnect() end
-    if noclipConnections.renderstep then noclipConnections.renderstep:Disconnect() end
-    if noclipConnections.stepped then noclipConnections.stepped:Disconnect() end
-    
-    noclipConnections.heartbeat = game:GetService("RunService").Heartbeat:Connect(function()
-        if noclipEnabled then
-            applyNoclipToAllParts(true)
-        end
+-- Создание ESP при заходе и респавне игрока
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        removeESP(player)
+        createESP(player)
     end)
     
-    noclipConnections.renderstep = game:GetService("RunService").RenderStepped:Connect(function()
-        if noclipEnabled then
-            applyNoclipToAllParts(true)
-        end
-    end)
-    
-    noclipConnections.stepped = game:GetService("RunService").Stepped:Connect(function()
-        if noclipEnabled then
-            applyNoclipToAllParts(true)
-        end
-    end)
-end
-
-local function stopNoclipLoop()
-    if noclipConnections.heartbeat then noclipConnections.heartbeat:Disconnect(); noclipConnections.heartbeat = nil end
-    if noclipConnections.renderstep then noclipConnections.renderstep:Disconnect(); noclipConnections.renderstep = nil end
-    if noclipConnections.stepped then noclipConnections.stepped:Disconnect(); noclipConnections.stepped = nil end
-end
-
-function toggleNoclip()
-    noclipEnabled = not noclipEnabled
-    if noclipEnabled then
-        applyNoclipToAllParts(true)
-        startNoclipLoop()
-        player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            root = character:WaitForChild("HumanoidRootPart")
-            humanoid = character:WaitForChild("Humanoid")
-            if noclipEnabled then
-                applyNoclipToAllParts(true)
-            end
-        end)
-    else
-        stopNoclipLoop()
-        applyNoclipToAllParts(false)
+    if player.Character then
+        createESP(player)
     end
-end
-
-function toggleFly()
-    flyEnabled = not flyEnabled
-    if flyEnabled then
-        if not noclipEnabled then
-            noclipEnabled = true
-            applyNoclipToAllParts(true)
-            startNoclipLoop()
-        end
-        
-        flyBodyVelocity = Instance.new("BodyVelocity")
-        flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-        flyBodyVelocity.Parent = root
-
-        flyGyro = Instance.new("BodyGyro")
-        flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-        flyGyro.Parent = root
-
-        humanoid.PlatformStand = true
-
-        if flyConnection then flyConnection:Disconnect() end
-        flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
-            if not flyEnabled then return end
-            
-            if noclipEnabled then
-                local currentChar = player.Character
-                if currentChar then
-                    for _, part in ipairs(currentChar:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = false
-                        end
-                    end
-                end
-            end
-
-            local move = Vector3.new()
-            local camCFrame = camera.CFrame
-            local forward = camCFrame.LookVector
-            local right = camCFrame.RightVector
-            local up = Vector3.new(0, 1, 0)
-
-            local input = game:GetService("UserInputService")
-
-            if input:IsKeyDown(Enum.KeyCode.W) then move = move + forward end
-            if input:IsKeyDown(Enum.KeyCode.S) then move = move - forward end
-            if input:IsKeyDown(Enum.KeyCode.A) then move = move - right end
-            if input:IsKeyDown(Enum.KeyCode.D) then move = move + right end
-            if input:IsKeyDown(Enum.KeyCode.Space) then move = move + up end
-            if input:IsKeyDown(Enum.KeyCode.LeftControl) then move = move - up end
-
-            if move.Magnitude > 0 then
-                move = move.Unit * FLY_SPEED
-            end
-
-            flyBodyVelocity.Velocity = move
-
-            local lookDirection = camCFrame.LookVector
-            local targetCFrame = CFrame.new(root.Position, root.Position + lookDirection)
-            flyGyro.CFrame = targetCFrame
-        end)
-        
-        player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            root = character:WaitForChild("HumanoidRootPart")
-            humanoid = character:WaitForChild("Humanoid")
-            if flyEnabled then
-                if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
-                if flyGyro then flyGyro:Destroy(); flyGyro = nil end
-                flyBodyVelocity = Instance.new("BodyVelocity")
-                flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-                flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                flyBodyVelocity.Parent = root
-                flyGyro = Instance.new("BodyGyro")
-                flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-                flyGyro.Parent = root
-                humanoid.PlatformStand = true
-                if noclipEnabled then
-                    applyNoclipToAllParts(true)
-                end
-            end
-        end)
-    else
-        if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
-        if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
-        if flyGyro then flyGyro:Destroy(); flyGyro = nil end
-        humanoid.PlatformStand = false
-        
-        if not noclipEnabled then
-            stopNoclipLoop()
-            applyNoclipToAllParts(false)
-        end
-    end
-end
-
-function toggleGod()
-    godEnabled = not godEnabled
-    
-    if godEnabled then
-        if godHeartbeatConnection then godHeartbeatConnection:Disconnect() end
-        if godCharacterConnection then godCharacterConnection:Disconnect() end
-        
-        local function applyGod()
-            if not character or not character.Parent then return end
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
-            
-            humanoid.MaxHealth = 9e9
-            humanoid.Health = 9e9
-            humanoid.BreakJointsOnDeath = false
-            
-            root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
-        end
-        
-        applyGod()
-        
-        godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not godEnabled then return end
-            if not character or not character.Parent then return end
-            
-            if humanoid and humanoid.Parent then
-                if humanoid.Health <= 0 or humanoid.Health < 1000 then
-                    humanoid.Health = 9e9
-                end
-                if humanoid.MaxHealth < 9e8 then
-                    humanoid.MaxHealth = 9e9
-                end
-            end
-            
-            if character:FindFirstChild("Humanoid") then
-                if humanoid.Health <= 0 then
-                    humanoid.Health = 9e9
-                end
-            end
-        end)
-        
-        godCharacterConnection = player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
-            task.wait(0.1)
-            if godEnabled then
-                applyGod()
-            end
-        end)
-        
-    else
-        if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
-        if godCharacterConnection then godCharacterConnection:Disconnect(); godCharacterConnection = nil end
-        
-        if character and character.Parent then
-            humanoid.MaxHealth = 100
-            humanoid.Health = 100
-            humanoid.BreakJointsOnDeath = true
-            root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
-        end
-    end
-end
-
-function toggleKillAura()
-    killAuraEnabled = not killAuraEnabled
-    if killAuraEnabled then
-        if killAuraConnection then killAuraConnection:Disconnect() end
-        killAuraConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not killAuraEnabled then return end
-            local nearest = nil
-            local nearestDist = KILL_AURA_RANGE + 1
-            for _, plr in ipairs(game.Players:GetPlayers()) do
-                if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                    local dist = (root.Position - plr.Character.HumanoidRootPart.Position).Magnitude
-                    if dist < nearestDist and plr.Character.Humanoid.Health > 0 then
-                        nearest = plr
-                        nearestDist = dist
-                    end
-                end
-            end
-            if nearest then
-                local targetRoot = nearest.Character.HumanoidRootPart
-                local lookAt = (targetRoot.Position - root.Position).Unit
-                root.CFrame = CFrame.new(root.Position, root.Position + lookAt)
-                local tool = player.Character:FindFirstChildOfClass("Tool")
-                if tool and tool:FindFirstChild("Handle") then
-                    tool:Activate()
-                    task.wait(KILL_AURA_DELAY)
-                    tool:Deactivate()
-                else
-                    if targetRoot.Parent:FindFirstChild("Humanoid") then
-                        targetRoot.Parent.Humanoid:TakeDamage(30)
-                    end
-                end
-                task.wait(KILL_AURA_DELAY)
-            end
-        end)
-    else
-        if killAuraConnection then killAuraConnection:Disconnect(); killAuraConnection = nil end
-    end
-end
-
-function toggleSpeed()
-    speedEnabled = not speedEnabled
-    if speedEnabled then
-        if speedHeartbeatConnection then speedHeartbeatConnection:Disconnect() end
-        local origWalkSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = SPEED_MULTIPLIER
-        humanoid.JumpPower = 100
-        humanoid.AutoRotate = true
-        speedHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not speedEnabled then 
-                humanoid.WalkSpeed = origWalkSpeed 
-                humanoid.JumpPower = 50
-                return 
-            end
-            humanoid.WalkSpeed = SPEED_MULTIPLIER
-            humanoid.JumpPower = 100
-        end)
-    else
-        if speedHeartbeatConnection then speedHeartbeatConnection:Disconnect(); speedHeartbeatConnection = nil end
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-    end
-end
-
-local function createESP()
-    if espEnabled then
-        for _, obj in pairs(espObjects) do
-            if obj then obj:Remove() end
-        end
-        espObjects = {}
-    end
-    
-    espEnabled = not espEnabled
-    
-    if not espEnabled then return end
-    
-    game:GetService("RunService").RenderStepped:Connect(function()
-        if not espEnabled then return end
-        for _, plr in ipairs(game.Players:GetPlayers()) do
-            if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                local targetRoot = plr.Character.HumanoidRootPart
-                local targetPos, onScreen = camera:WorldToViewportPoint(targetRoot.Position)
-                if onScreen then
-                    local dist = (root.Position - targetRoot.Position).Magnitude
-                    local health = plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health or 0
-                    local healthPercent = health / 100
-                    
-                    local box = Drawing.new("Square")
-                    box.Size = Vector2.new(60, 80)
-                    box.Position = Vector2.new(targetPos.X - 30, targetPos.Y - 40)
-                    box.Thickness = 2
-                    box.Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
-                    box.Transparency = 0.7
-                    box.Filled = false
-                    box.Visible = true
-                    table.insert(espObjects, box)
-                    
-                    local nameTag = Drawing.new("Text")
-                    nameTag.Position = Vector2.new(targetPos.X - 30, targetPos.Y - 50)
-                    nameTag.Text = plr.Name .. " | " .. math.floor(dist) .. "m"
-                    nameTag.Size = 16
-                    nameTag.Color = Color3.fromRGB(255, 255, 255)
-                    nameTag.Center = true
-                    nameTag.Visible = true
-                    table.insert(espObjects, nameTag)
-                    
-                    local healthBar = Drawing.new("Line")
-                    healthBar.From = Vector2.new(targetPos.X - 30, targetPos.Y + 40)
-                    healthBar.To = Vector2.new(targetPos.X - 30 + (60 * healthPercent), targetPos.Y + 40)
-                    healthBar.Thickness = 4
-                    healthBar.Color = Color3.fromRGB(255 * (1 - healthPercent), 255 * healthPercent, 0)
-                    healthBar.Visible = true
-                    table.insert(espObjects, healthBar)
-                end
-            end
-        end
-    end)
-end
-
-local function getPlayersList()
-    local players = {}
-    for _, plr in ipairs(game.Players:GetPlayers()) do
-        if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            table.insert(players, plr)
-        end
-    end
-    return players
-end
-
-local function createPlayerSelector()
-    local selectorGui = Instance.new("ScreenGui")
-    selectorGui.Name = "PlayerSelector"
-    selectorGui.Parent = player.PlayerGui
-    
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 200, 0, 300)
-    frame.Position = UDim2.new(0.5, -100, 0.5, -150)
-    frame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-    frame.BackgroundTransparency = 0.2
-    frame.BorderSizePixel = 2
-    frame.BorderColor3 = Color3.fromRGB(180, 140, 255)
-    frame.Active = true
-    frame.Draggable = true
-    frame.Parent = selectorGui
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.BackgroundColor3 = Color3.fromRGB(180, 140, 255)
-    title.Text = "Выберите цель"
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextScaled = true
-    title.Font = Enum.Font.GothamBold
-    title.Parent = frame
-    
-    local list = Instance.new("ScrollingFrame")
-    list.Size = UDim2.new(1, -10, 1, -40)
-    list.Position = UDim2.new(0, 5, 0, 35)
-    list.BackgroundTransparency = 1
-    list.CanvasSize = UDim2.new(0, 0, 0, 0)
-    list.Parent = frame
-    
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 25, 1, -2)
-    closeBtn.Position = UDim2.new(1, -28, 0, 1)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
-    closeBtn.Text = "X"
-    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn.TextScaled = true
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.Parent = title
-    closeBtn.MouseButton1Click:Connect(function()
-        selectorGui:Destroy()
-    end)
-    
-    local y = 0
-    for _, plr in ipairs(getPlayersList()) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -10, 0, 30)
-        btn.Position = UDim2.new(0, 5, 0, y)
-        btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-        btn.Text = plr.Name
-        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.TextScaled = true
-        btn.Font = Enum.Font.Gotham
-        btn.Parent = list
-        btn.MouseButton1Click:Connect(function()
-            pushTarget = plr
-            selectorGui:Destroy()
-            print("Цель выбрана: " .. plr.Name)
-        end)
-        y = y + 35
-    end
-    list.CanvasSize = UDim2.new(0, 0, 0, y)
-end
-
-function togglePush()
-    pushEnabled = not pushEnabled
-    
-    if pushEnabled then
-        createPlayerSelector()
-        
-        if pushConnection then pushConnection:Disconnect() end
-        pushConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not pushEnabled or not pushTarget or not pushTarget.Character then return end
-            local targetRoot = pushTarget.Character:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then return end
-            
-            local angle = tick() * PUSH_ROTATION_SPEED
-            local radius = 10
-            local x = targetRoot.Position.X + math.cos(angle) * radius
-            local z = targetRoot.Position.Z + math.sin(angle) * radius
-            local y = targetRoot.Position.Y + 5
-            
-            root.CFrame = CFrame.new(Vector3.new(x, y, z), targetRoot.Position)
-            
-            local pushVelocity = Instance.new("BodyVelocity")
-            pushVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-            local dir = (targetRoot.Position - root.Position).Unit
-            pushVelocity.Velocity = dir * PUSH_FORCE + Vector3.new(0, PUSH_FORCE * 0.3, 0)
-            pushVelocity.Parent = targetRoot
-            
-            task.wait(0.1)
-            pushVelocity:Destroy()
-        end)
-    else
-        if pushConnection then pushConnection:Disconnect(); pushConnection = nil end
-        pushTarget = nil
-    end
-end
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ROCKET_GUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player.PlayerGui
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 450)
-mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-mainFrame.BackgroundTransparency = 0.15
-mainFrame.BorderSizePixel = 2
-mainFrame.BorderColor3 = Color3.fromRGB(12, 10, 26)
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -60, 1, 0)
-title.Position = UDim2.new(0, 5, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "Ebanat Hub: Universal"
-title.TextColor3 = Color3.fromRGB(180, 140, 255)
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = titleBar
-
-local minBtn = Instance.new("TextButton")
-minBtn.Size = UDim2.new(0, 25, 1, -2)
-minBtn.Position = UDim2.new(1, -55, 0, 1)
-minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-minBtn.Text = "-"
-minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-minBtn.TextScaled = true
-minBtn.Font = Enum.Font.GothamBold
-minBtn.Parent = titleBar
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 25, 1, -2)
-closeBtn.Position = UDim2.new(1, -28, 0, 1)
-closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextScaled = true
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Parent = titleBar
-
-local buttonContainer = Instance.new("Frame")
-buttonContainer.Size = UDim2.new(1, -20, 1, -50)
-buttonContainer.Position = UDim2.new(0, 10, 0, 40)
-buttonContainer.BackgroundTransparency = 1
-buttonContainer.Parent = mainFrame
-
-local speedControllerFrame = nil
-local speedSlider = nil
-local speedValueLabel = nil
-
-function createSpeedController()
-    if speedControllerFrame then
-        speedControllerFrame.Visible = true
-        return
-    end
-    
-    speedControllerFrame = Instance.new("Frame")
-    speedControllerFrame.Size = UDim2.new(0, 220, 0, 160)
-    speedControllerFrame.Position = UDim2.new(0.5, -110, 0.5, -80)
-    speedControllerFrame.BackgroundColor3 = Color3.fromRGB(20, 18, 40)
-    speedControllerFrame.BackgroundTransparency = 0.1
-    speedControllerFrame.BorderSizePixel = 2
-    speedControllerFrame.BorderColor3 = Color3.fromRGB(180, 140, 255)
-    speedControllerFrame.Active = true
-    speedControllerFrame.Draggable = true
-    speedControllerFrame.Visible = true
-    speedControllerFrame.Parent = screenGui
-    
-    local titleBar2 = Instance.new("Frame")
-    titleBar2.Size = UDim2.new(1, 0, 0, 30)
-    titleBar2.BackgroundColor3 = Color3.fromRGB(180, 140, 255)
-    titleBar2.BorderSizePixel = 0
-    titleBar2.Parent = speedControllerFrame
-    
-    local title2 = Instance.new("TextLabel")
-    title2.Size = UDim2.new(1, -30, 1, 0)
-    title2.Position = UDim2.new(0, 5, 0, 0)
-    title2.BackgroundTransparency = 1
-    title2.Text = "Speed Controller"
-    title2.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title2.TextScaled = true
-    title2.Font = Enum.Font.GothamBold
-    title2.TextXAlignment = Enum.TextXAlignment.Left
-    title2.Parent = titleBar2
-    
-    local closeBtn2 = Instance.new("TextButton")
-    closeBtn2.Size = UDim2.new(0, 25, 1, -2)
-    closeBtn2.Position = UDim2.new(1, -28, 0, 1)
-    closeBtn2.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
-    closeBtn2.Text = "X"
-    closeBtn2.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn2.TextScaled = true
-    closeBtn2.Font = Enum.Font.GothamBold
-    closeBtn2.Parent = titleBar2
-    closeBtn2.MouseButton1Click:Connect(function()
-        speedControllerFrame.Visible = false
-    end)
-    
-    local defaultLabel = Instance.new("TextLabel")
-    defaultLabel.Size = UDim2.new(1, -20, 0, 20)
-    defaultLabel.Position = UDim2.new(0, 10, 0, 40)
-    defaultLabel.BackgroundTransparency = 1
-    defaultLabel.Text = "Default: " .. DEFAULT_SPEED
-    defaultLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
-    defaultLabel.TextScaled = true
-    defaultLabel.Font = Enum.Font.Gotham
-    defaultLabel.TextXAlignment = Enum.TextXAlignment.Left
-    defaultLabel.Parent = speedControllerFrame
-    
-    speedValueLabel = Instance.new("TextLabel")
-    speedValueLabel.Size = UDim2.new(1, -20, 0, 20)
-    speedValueLabel.Position = UDim2.new(0, 10, 0, 65)
-    speedValueLabel.BackgroundTransparency = 1
-    speedValueLabel.Text = "Current: " .. SPEED_MULTIPLIER
-    speedValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    speedValueLabel.TextScaled = true
-    speedValueLabel.Font = Enum.Font.GothamBold
-    speedValueLabel.TextXAlignment = Enum.TextXAlignment.Left
-    speedValueLabel.Parent = speedControllerFrame
-    
-    speedSlider = Instance.new("TextBox")
-    speedSlider.Size = UDim2.new(0, 160, 0, 20)
-    speedSlider.Position = UDim2.new(0.5, -80, 0, 95)
-    speedSlider.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    speedSlider.Text = tostring(SPEED_MULTIPLIER)
-    speedSlider.TextColor3 = Color3.fromRGB(255, 255, 255)
-    speedSlider.TextScaled = true
-    speedSlider.Font = Enum.Font.Gotham
-    speedSlider.ClearTextOnFocus = false
-    speedSlider.Parent = speedControllerFrame
-    
-    local defaultBtn = Instance.new("TextButton")
-    defaultBtn.Size = UDim2.new(0, 70, 0, 25)
-    defaultBtn.Position = UDim2.new(0.1, 0, 0, 125)
-    defaultBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
-    defaultBtn.Text = "Default"
-    defaultBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    defaultBtn.TextScaled = true
-    defaultBtn.Font = Enum.Font.GothamBold
-    defaultBtn.Parent = speedControllerFrame
-    defaultBtn.MouseButton1Click:Connect(function()
-        SPEED_MULTIPLIER = DEFAULT_SPEED
-        speedSlider.Text = tostring(DEFAULT_SPEED)
-        speedValueLabel.Text = "Current: " .. DEFAULT_SPEED
-        if speedEnabled then
-            humanoid.WalkSpeed = DEFAULT_SPEED
-        end
-    end)
-    
-    local setBtn = Instance.new("TextButton")
-    setBtn.Size = UDim2.new(0, 60, 0, 25)
-    setBtn.Position = UDim2.new(0.6, 0, 0, 125)
-    setBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
-    setBtn.Text = "Set"
-    setBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    setBtn.TextScaled = true
-    setBtn.Font = Enum.Font.GothamBold
-    setBtn.Parent = speedControllerFrame
-    setBtn.MouseButton1Click:Connect(function()
-        local val = tonumber(speedSlider.Text)
-        if val and val >= 10 and val <= 200 then
-            SPEED_MULTIPLIER = val
-            speedValueLabel.Text = "Current: " .. SPEED_MULTIPLIER
-            if speedEnabled then
-                humanoid.WalkSpeed = SPEED_MULTIPLIER
-            end
-        else
-            speedSlider.Text = tostring(SPEED_MULTIPLIER)
-        end
-    end)
-end
-
-local function createToggleButton(name, label, yPos, toggleFunc, hasMenu)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 35)
-    btn.Position = UDim2.new(0, 0, 0, yPos)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    btn.Text = label .. " : OFF"
-    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    btn.TextScaled = true
-    btn.Font = Enum.Font.Gotham
-    btn.BorderSizePixel = 1
-    btn.BorderColor3 = Color3.fromRGB(100, 100, 150)
-    btn.Parent = buttonContainer
-    
-    local state = false
-    
-    if hasMenu then
-        local dots = Instance.new("TextLabel")
-        dots.Size = UDim2.new(0, 20, 1, 0)
-        dots.Position = UDim2.new(1, -25, 0, 0)
-        dots.BackgroundTransparency = 1
-        dots.Text = "…"
-        dots.TextColor3 = Color3.fromRGB(180, 140, 255)
-        dots.TextScaled = true
-        dots.Font = Enum.Font.GothamBold
-        dots.TextXAlignment = Enum.TextXAlignment.Center
-        dots.Parent = btn
-        
-        btn.MouseButton2Click:Connect(function()
-            createSpeedController()
-        end)
-    end
-    
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        toggleFunc()
-        if state then
-            btn.BackgroundColor3 = Color3.fromRGB(0, 180, 80)
-            btn.Text = label .. " : ON"
-            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        else
-            btn.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-            btn.Text = label .. " : OFF"
-            btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-        end
-    end)
-    return btn
-end
-
-createToggleButton("flyBtn", "FLY", 10, toggleFly, false)
-createToggleButton("godBtn", "GODMODE", 55, toggleGod, false)
-createToggleButton("killBtn", "KILL AURA", 100, toggleKillAura, false)
-createToggleButton("speedBtn", "SPEED", 145, toggleSpeed, true)
-createToggleButton("noclipBtn", "NOCLIP", 190, toggleNoclip, false)
-createToggleButton("espBtn", "ESP", 235, createESP, false)
-createToggleButton("pushBtn", "PUSH", 280, togglePush, false)
-
-local isMinimized = false
-local miniFrame = Instance.new("Frame")
-miniFrame.Size = UDim2.new(0, 120, 0, 30)
-miniFrame.Position = UDim2.new(0.5, -60, 0.3, 0)
-miniFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-miniFrame.BorderSizePixel = 2
-miniFrame.BorderColor3 = Color3.fromRGB(12, 10, 26)
-miniFrame.Active = true
-miniFrame.Draggable = true
-miniFrame.Visible = false
-miniFrame.Parent = screenGui
-
-local miniLabel = Instance.new("TextLabel")
-miniLabel.Size = UDim2.new(1, -30, 1, 0)
-miniLabel.Position = UDim2.new(0, 5, 0, 0)
-miniLabel.BackgroundTransparency = 1
-miniLabel.Text = "Ebanat Hub"
-miniLabel.TextColor3 = Color3.fromRGB(180, 140, 255)
-miniLabel.TextScaled = true
-miniLabel.Font = Enum.Font.GothamBold
-miniLabel.TextXAlignment = Enum.TextXAlignment.Left
-miniLabel.Parent = miniFrame
-
-local miniRestore = Instance.new("TextButton")
-miniRestore.Size = UDim2.new(0, 25, 1, -2)
-miniRestore.Position = UDim2.new(1, -28, 0, 1)
-miniRestore.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-miniRestore.Text = "+"
-miniRestore.TextColor3 = Color3.fromRGB(255, 255, 255)
-miniRestore.TextScaled = true
-miniRestore.Font = Enum.Font.GothamBold
-miniRestore.Parent = miniFrame
-
-minBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    mainFrame.Visible = not isMinimized
-    miniFrame.Visible = isMinimized
 end)
 
-miniRestore.MouseButton1Click:Connect(function()
-    isMinimized = false
-    mainFrame.Visible = true
-    miniFrame.Visible = false
+Players.PlayerRemoving:Connect(function(player)
+    removeESP(player)
 end)
 
-closeBtn.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
+-- Основной цикл обновления
+RunService.RenderStepped:Connect(function()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            
+            if not espCache[player] then
+                createESP(player)
+            end
 
-print("Ebanat Hub: Universal loaded")
+            local character = player.Character
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            
+            if rootPart and espCache[player] then
+                local box = espCache[player].Box
+                local text = espCache[player].Text
+
+                local distance = (rootPart.Position - Camera.CFrame.Position).Magnitude
+                
+                text.Text = player.Name .. " [" .. math.floor(distance) .. "m]"
+                
+                box.Visible = true
+                text.Visible = true
+            end
+        end
+    end
+end)
