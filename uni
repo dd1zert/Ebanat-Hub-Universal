@@ -1,7 +1,4 @@
 local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
-local root = character:WaitForChild("HumanoidRootPart")
 local camera = workspace.CurrentCamera
 
 local flyEnabled = false
@@ -33,74 +30,19 @@ local espConnection = nil
 local pushConnection = nil
 local pushTarget = nil
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ROCKET_GUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player.PlayerGui
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 470)
-mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-mainFrame.BackgroundTransparency = 0.15
-mainFrame.BorderSizePixel = 2
-mainFrame.BorderColor3 = Color3.fromRGB(12, 10, 26)
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -60, 1, 0)
-title.Position = UDim2.new(0, 5, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "Ebanat Hub: Universal"
-title.TextColor3 = Color3.fromRGB(180, 140, 255)
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = titleBar
-
-local minBtn = Instance.new("TextButton")
-minBtn.Size = UDim2.new(0, 25, 1, -2)
-minBtn.Position = UDim2.new(1, -55, 0, 1)
-minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-minBtn.Text = "-"
-minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-minBtn.TextScaled = true
-minBtn.Font = Enum.Font.GothamBold
-minBtn.Parent = titleBar
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 25, 1, -2)
-closeBtn.Position = UDim2.new(1, -28, 0, 1)
-closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextScaled = true
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Parent = titleBar
-
-local buttonContainer = Instance.new("Frame")
-buttonContainer.Size = UDim2.new(1, -20, 1, -50)
-buttonContainer.Position = UDim2.new(0, 10, 0, 40)
-buttonContainer.BackgroundTransparency = 1
-buttonContainer.Parent = mainFrame
-
-local speedControllerFrame = nil
-local speedSlider = nil
-local speedValueLabel = nil
+local function getCharacter()
+    local char = player.Character
+    if not char then return nil, nil, nil end
+    local hum = char:FindFirstChild("Humanoid")
+    local r = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not r then return nil, nil, nil end
+    return char, hum, r
+end
 
 local function applyNoclipToAllParts(state)
-    local currentChar = player.Character
-    if not currentChar then return end
-    for _, part in ipairs(currentChar:GetDescendants()) do
+    local char = player.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = not state
         end
@@ -142,10 +84,7 @@ function toggleNoclip()
     if noclipEnabled then
         applyNoclipToAllParts(true)
         startNoclipLoop()
-        player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            root = character:WaitForChild("HumanoidRootPart")
-            humanoid = character:WaitForChild("Humanoid")
+        player.CharacterAdded:Connect(function()
             if noclipEnabled then
                 applyNoclipToAllParts(true)
             end
@@ -158,6 +97,9 @@ end
 
 function toggleFly()
     flyEnabled = not flyEnabled
+    local char, hum, r = getCharacter()
+    if not char or not hum or not r then return end
+    
     if flyEnabled then
         if not noclipEnabled then
             noclipEnabled = true
@@ -168,27 +110,22 @@ function toggleFly()
         flyBodyVelocity = Instance.new("BodyVelocity")
         flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
         flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-        flyBodyVelocity.Parent = root
+        flyBodyVelocity.Parent = r
 
         flyGyro = Instance.new("BodyGyro")
         flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-        flyGyro.Parent = root
+        flyGyro.Parent = r
 
-        humanoid.PlatformStand = true
+        hum.PlatformStand = true
 
         if flyConnection then flyConnection:Disconnect() end
         flyConnection = game:GetService("RunService").RenderStepped:Connect(function()
             if not flyEnabled then return end
+            local c, h, rt = getCharacter()
+            if not c or not h or not rt then return end
             
             if noclipEnabled then
-                local currentChar = player.Character
-                if currentChar then
-                    for _, part in ipairs(currentChar:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = false
-                        end
-                    end
-                end
+                applyNoclipToAllParts(true)
             end
 
             local move = Vector3.new()
@@ -210,30 +147,34 @@ function toggleFly()
                 move = move.Unit * FLY_SPEED
             end
 
-            flyBodyVelocity.Velocity = move
+            if flyBodyVelocity then
+                flyBodyVelocity.Velocity = move
+            end
 
-            local lookDirection = camCFrame.LookVector
-            local targetCFrame = CFrame.new(root.Position, root.Position + lookDirection)
-            flyGyro.CFrame = targetCFrame
+            if flyGyro then
+                local lookDirection = camCFrame.LookVector
+                local targetCFrame = CFrame.new(rt.Position, rt.Position + lookDirection)
+                flyGyro.CFrame = targetCFrame
+            end
         end)
         
-        player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            root = character:WaitForChild("HumanoidRootPart")
-            humanoid = character:WaitForChild("Humanoid")
+        player.CharacterAdded:Connect(function()
             if flyEnabled then
-                if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
-                if flyGyro then flyGyro:Destroy(); flyGyro = nil end
-                flyBodyVelocity = Instance.new("BodyVelocity")
-                flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-                flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                flyBodyVelocity.Parent = root
-                flyGyro = Instance.new("BodyGyro")
-                flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-                flyGyro.Parent = root
-                humanoid.PlatformStand = true
-                if noclipEnabled then
-                    applyNoclipToAllParts(true)
+                local c2, h2, rt2 = getCharacter()
+                if c2 and h2 and rt2 then
+                    if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+                    if flyGyro then flyGyro:Destroy(); flyGyro = nil end
+                    flyBodyVelocity = Instance.new("BodyVelocity")
+                    flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+                    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                    flyBodyVelocity.Parent = rt2
+                    flyGyro = Instance.new("BodyGyro")
+                    flyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+                    flyGyro.Parent = rt2
+                    h2.PlatformStand = true
+                    if noclipEnabled then
+                        applyNoclipToAllParts(true)
+                    end
                 end
             end
         end)
@@ -241,7 +182,8 @@ function toggleFly()
         if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
         if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
         if flyGyro then flyGyro:Destroy(); flyGyro = nil end
-        humanoid.PlatformStand = false
+        local c, h = getCharacter()
+        if h then h.PlatformStand = false end
         
         if not noclipEnabled then
             stopNoclipLoop()
@@ -258,43 +200,29 @@ function toggleGod()
         if godCharacterConnection then godCharacterConnection:Disconnect() end
         
         local function applyGod()
-            if not character or not character.Parent then return end
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
-            
-            humanoid.MaxHealth = 9e9
-            humanoid.Health = 9e9
-            humanoid.BreakJointsOnDeath = false
-            
-            root.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
+            local c, h, r = getCharacter()
+            if not c or not h or not r then return end
+            h.MaxHealth = 9e9
+            h.Health = 9e9
+            h.BreakJointsOnDeath = false
+            r.CustomPhysicalProperties = PhysicalProperties.new(0, 0, 0, 0, 0)
         end
         
         applyGod()
         
         godHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
             if not godEnabled then return end
-            if not character or not character.Parent then return end
-            
-            if humanoid and humanoid.Parent then
-                if humanoid.Health <= 0 or humanoid.Health < 1000 then
-                    humanoid.Health = 9e9
-                end
-                if humanoid.MaxHealth < 9e8 then
-                    humanoid.MaxHealth = 9e9
-                end
+            local c, h, r = getCharacter()
+            if not c or not h or not r then return end
+            if h.Health <= 0 or h.Health < 1000 then
+                h.Health = 9e9
             end
-            
-            if character:FindFirstChild("Humanoid") then
-                if humanoid.Health <= 0 then
-                    humanoid.Health = 9e9
-                end
+            if h.MaxHealth < 9e8 then
+                h.MaxHealth = 9e9
             end
         end)
         
-        godCharacterConnection = player.CharacterAdded:Connect(function(newChar)
-            character = newChar
-            humanoid = character:WaitForChild("Humanoid")
-            root = character:WaitForChild("HumanoidRootPart")
+        godCharacterConnection = player.CharacterAdded:Connect(function()
             task.wait(0.1)
             if godEnabled then
                 applyGod()
@@ -305,11 +233,12 @@ function toggleGod()
         if godHeartbeatConnection then godHeartbeatConnection:Disconnect(); godHeartbeatConnection = nil end
         if godCharacterConnection then godCharacterConnection:Disconnect(); godCharacterConnection = nil end
         
-        if character and character.Parent then
-            humanoid.MaxHealth = 100
-            humanoid.Health = 100
-            humanoid.BreakJointsOnDeath = true
-            root.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
+        local c, h, r = getCharacter()
+        if c and h and r then
+            h.MaxHealth = 100
+            h.Health = 100
+            h.BreakJointsOnDeath = true
+            r.CustomPhysicalProperties = PhysicalProperties.new(1, 1, 1, 1, 1)
         end
     end
 end
@@ -320,11 +249,15 @@ function toggleKillAura()
         if killAuraConnection then killAuraConnection:Disconnect() end
         killAuraConnection = game:GetService("RunService").Heartbeat:Connect(function()
             if not killAuraEnabled then return end
+            local c, h, r = getCharacter()
+            if not c or not h or not r then return end
+            
             local nearest = nil
             local nearestDist = KILL_AURA_RANGE + 1
             for _, plr in ipairs(game.Players:GetPlayers()) do
                 if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                    local dist = (root.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+                    local targetRoot = plr.Character.HumanoidRootPart
+                    local dist = (r.Position - targetRoot.Position).Magnitude
                     if dist < nearestDist and plr.Character.Humanoid.Health > 0 then
                         nearest = plr
                         nearestDist = dist
@@ -333,9 +266,9 @@ function toggleKillAura()
             end
             if nearest then
                 local targetRoot = nearest.Character.HumanoidRootPart
-                local lookAt = (targetRoot.Position - root.Position).Unit
-                root.CFrame = CFrame.new(root.Position, root.Position + lookAt)
-                local tool = player.Character:FindFirstChildOfClass("Tool")
+                local lookAt = (targetRoot.Position - r.Position).Unit
+                r.CFrame = CFrame.new(r.Position, r.Position + lookAt)
+                local tool = c:FindFirstChildOfClass("Tool")
                 if tool and tool:FindFirstChild("Handle") then
                     tool:Activate()
                     task.wait(KILL_AURA_DELAY)
@@ -355,25 +288,37 @@ end
 
 function toggleSpeed()
     speedEnabled = not speedEnabled
+    local c, h, r = getCharacter()
+    if not c or not h or not r then return end
+    
     if speedEnabled then
         if speedHeartbeatConnection then speedHeartbeatConnection:Disconnect() end
-        local origWalkSpeed = humanoid.WalkSpeed
-        humanoid.WalkSpeed = SPEED_MULTIPLIER
-        humanoid.JumpPower = 100
-        humanoid.AutoRotate = true
+        local origWalkSpeed = h.WalkSpeed
+        h.WalkSpeed = SPEED_MULTIPLIER
+        h.JumpPower = 100
+        h.AutoRotate = true
         speedHeartbeatConnection = game:GetService("RunService").Heartbeat:Connect(function()
-            if not speedEnabled then 
-                humanoid.WalkSpeed = origWalkSpeed 
-                humanoid.JumpPower = 50
-                return 
+            if not speedEnabled then
+                local c2, h2 = getCharacter()
+                if h2 then
+                    h2.WalkSpeed = origWalkSpeed
+                    h2.JumpPower = 50
+                end
+                return
             end
-            humanoid.WalkSpeed = SPEED_MULTIPLIER
-            humanoid.JumpPower = 100
+            local c2, h2 = getCharacter()
+            if h2 then
+                h2.WalkSpeed = SPEED_MULTIPLIER
+                h2.JumpPower = 100
+            end
         end)
     else
         if speedHeartbeatConnection then speedHeartbeatConnection:Disconnect(); speedHeartbeatConnection = nil end
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
+        local c2, h2 = getCharacter()
+        if h2 then
+            h2.WalkSpeed = 16
+            h2.JumpPower = 50
+        end
     end
 end
 
@@ -389,12 +334,15 @@ function toggleESP()
             end
             espObjects = {}
             
+            local c, h, r = getCharacter()
+            if not c or not h or not r then return end
+            
             for _, plr in ipairs(game.Players:GetPlayers()) do
                 if plr ~= player and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
                     local targetRoot = plr.Character.HumanoidRootPart
                     local targetPos, onScreen = camera:WorldToViewportPoint(targetRoot.Position)
                     if onScreen then
-                        local dist = (root.Position - targetRoot.Position).Magnitude
+                        local dist = (r.Position - targetRoot.Position).Magnitude
                         local health = plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health or 0
                         local healthPercent = math.clamp(health / 100, 0, 1)
                         
@@ -524,17 +472,20 @@ function togglePush()
             local targetRoot = pushTarget.Character:FindFirstChild("HumanoidRootPart")
             if not targetRoot then return end
             
+            local c, h, r = getCharacter()
+            if not c or not h or not r then return end
+            
             local angle = tick() * PUSH_ROTATION_SPEED
             local radius = 10
             local x = targetRoot.Position.X + math.cos(angle) * radius
             local z = targetRoot.Position.Z + math.sin(angle) * radius
             local y = targetRoot.Position.Y + 5
             
-            root.CFrame = CFrame.new(Vector3.new(x, y, z), targetRoot.Position)
+            r.CFrame = CFrame.new(Vector3.new(x, y, z), targetRoot.Position)
             
             local pushVelocity = Instance.new("BodyVelocity")
             pushVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-            local dir = (targetRoot.Position - root.Position).Unit
+            local dir = (targetRoot.Position - r.Position).Unit
             pushVelocity.Velocity = dir * PUSH_FORCE + Vector3.new(0, PUSH_FORCE * 0.3, 0)
             pushVelocity.Parent = targetRoot
             
@@ -546,6 +497,70 @@ function togglePush()
         pushTarget = nil
     end
 end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ROCKET_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 280, 0, 470)
+mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 2
+mainFrame.BorderColor3 = Color3.fromRGB(12, 10, 26)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -60, 1, 0)
+title.Position = UDim2.new(0, 5, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Ebanat Hub: Universal"
+title.TextColor3 = Color3.fromRGB(180, 140, 255)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = titleBar
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 25, 1, -2)
+minBtn.Position = UDim2.new(1, -55, 0, 1)
+minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+minBtn.Text = "-"
+minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minBtn.TextScaled = true
+minBtn.Font = Enum.Font.GothamBold
+minBtn.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 25, 1, -2)
+closeBtn.Position = UDim2.new(1, -28, 0, 1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextScaled = true
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = titleBar
+
+local buttonContainer = Instance.new("Frame")
+buttonContainer.Size = UDim2.new(1, -20, 1, -50)
+buttonContainer.Position = UDim2.new(0, 10, 0, 40)
+buttonContainer.BackgroundTransparency = 1
+buttonContainer.Parent = mainFrame
+
+local speedControllerFrame = nil
+local speedSlider = nil
+local speedValueLabel = nil
 
 function createSpeedController()
     if speedControllerFrame then
@@ -642,7 +657,8 @@ function createSpeedController()
         speedSlider.Text = tostring(DEFAULT_SPEED)
         speedValueLabel.Text = "Current: " .. DEFAULT_SPEED
         if speedEnabled then
-            humanoid.WalkSpeed = DEFAULT_SPEED
+            local c, h = getCharacter()
+            if h then h.WalkSpeed = DEFAULT_SPEED end
         end
     end)
     
@@ -661,7 +677,8 @@ function createSpeedController()
             SPEED_MULTIPLIER = val
             speedValueLabel.Text = "Current: " .. SPEED_MULTIPLIER
             if speedEnabled then
-                humanoid.WalkSpeed = SPEED_MULTIPLIER
+                local c, h = getCharacter()
+                if h then h.WalkSpeed = SPEED_MULTIPLIER end
             end
         else
             speedSlider.Text = tostring(SPEED_MULTIPLIER)
