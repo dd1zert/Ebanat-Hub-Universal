@@ -33,6 +33,70 @@ local espConnection = nil
 local pushConnection = nil
 local pushTarget = nil
 
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ROCKET_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player.PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 280, 0, 470)
+mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 2
+mainFrame.BorderColor3 = Color3.fromRGB(12, 10, 26)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -60, 1, 0)
+title.Position = UDim2.new(0, 5, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Ebanat Hub: Universal"
+title.TextColor3 = Color3.fromRGB(180, 140, 255)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = titleBar
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 25, 1, -2)
+minBtn.Position = UDim2.new(1, -55, 0, 1)
+minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+minBtn.Text = "-"
+minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minBtn.TextScaled = true
+minBtn.Font = Enum.Font.GothamBold
+minBtn.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 25, 1, -2)
+closeBtn.Position = UDim2.new(1, -28, 0, 1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
+closeBtn.Text = "X"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextScaled = true
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = titleBar
+
+local buttonContainer = Instance.new("Frame")
+buttonContainer.Size = UDim2.new(1, -20, 1, -50)
+buttonContainer.Position = UDim2.new(0, 10, 0, 40)
+buttonContainer.BackgroundTransparency = 1
+buttonContainer.Parent = mainFrame
+
+local speedControllerFrame = nil
+local speedSlider = nil
+local speedValueLabel = nil
+
 local function applyNoclipToAllParts(state)
     local currentChar = player.Character
     if not currentChar then return end
@@ -442,7 +506,6 @@ local function createPlayerSelector()
         btn.MouseButton1Click:Connect(function()
             pushTarget = plr
             selectorGui:Destroy()
-            print("Цель выбрана: " .. plr.Name)
         end)
         y = y + 35
     end
@@ -483,70 +546,6 @@ function togglePush()
         pushTarget = nil
     end
 end
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ROCKET_GUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = player.PlayerGui
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 280, 0, 470)
-mainFrame.Position = UDim2.new(0.5, -140, 0.3, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-mainFrame.BackgroundTransparency = 0.15
-mainFrame.BorderSizePixel = 2
-mainFrame.BorderColor3 = Color3.fromRGB(12, 10, 26)
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.Parent = screenGui
-
-local titleBar = Instance.new("Frame")
-titleBar.Size = UDim2.new(1, 0, 0, 30)
-titleBar.BackgroundColor3 = Color3.fromRGB(12, 10, 26)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -60, 1, 0)
-title.Position = UDim2.new(0, 5, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "Ebanat Hub: Universal"
-title.TextColor3 = Color3.fromRGB(180, 140, 255)
-title.TextScaled = true
-title.Font = Enum.Font.GothamBold
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = titleBar
-
-local minBtn = Instance.new("TextButton")
-minBtn.Size = UDim2.new(0, 25, 1, -2)
-minBtn.Position = UDim2.new(1, -55, 0, 1)
-minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-minBtn.Text = "-"
-minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-minBtn.TextScaled = true
-minBtn.Font = Enum.Font.GothamBold
-minBtn.Parent = titleBar
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 25, 1, -2)
-closeBtn.Position = UDim2.new(1, -28, 0, 1)
-closeBtn.BackgroundColor3 = Color3.fromRGB(180, 20, 20)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextScaled = true
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.Parent = titleBar
-
-local buttonContainer = Instance.new("Frame")
-buttonContainer.Size = UDim2.new(1, -20, 1, -50)
-buttonContainer.Position = UDim2.new(0, 10, 0, 40)
-buttonContainer.BackgroundTransparency = 1
-buttonContainer.Parent = mainFrame
-
-local speedControllerFrame = nil
-local speedSlider = nil
-local speedValueLabel = nil
 
 function createSpeedController()
     if speedControllerFrame then
@@ -775,4 +774,4 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-print("Ebanat Hub: Universal loaded - PANEL FIXED")
+print("Ebanat Hub: Universal loaded")
